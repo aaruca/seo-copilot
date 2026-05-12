@@ -1,0 +1,182 @@
+/* SEO Copilot — Fluent 2 design tokens.
+   Default theme is LIGHT. Dark is opt-in via `data-theme="dark"`.
+   We intentionally do NOT auto-switch on `prefers-color-scheme`, because
+   wp-admin remains light and a dark plugin pane inside a light shell looks broken. */
+
+.seocp-app {
+    /* Typography ------------------------------------------------------------ */
+    --seocp-font-family-base: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --seocp-font-family-display: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+    --seocp-font-family-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+    --seocp-font-size-100: 11px;
+    --seocp-font-size-200: 12px;
+    --seocp-font-size-300: 14px;
+    --seocp-font-size-400: 16px;
+    --seocp-font-size-500: 20px;
+    --seocp-font-size-600: 24px;
+    --seocp-font-size-700: 28px;
+    --seocp-font-size-800: 32px;
+    --seocp-font-size-900: 40px;
+
+    --seocp-line-height-100: 14px;
+    --seocp-line-height-200: 16px;
+    --seocp-line-height-300: 20px;
+    --seocp-line-height-400: 22px;
+    --seocp-line-height-500: 28px;
+    --seocp-line-height-600: 32px;
+    --seocp-line-height-700: 36px;
+    --seocp-line-height-800: 40px;
+    --seocp-line-height-900: 52px;
+
+    --seocp-font-weight-regular: 400;
+    --seocp-font-weight-medium: 500;
+    --seocp-font-weight-semibold: 600;
+    --seocp-font-weight-bold: 700;
+
+    /* Neutrals (light, AA-tested) ------------------------------------------ */
+    --seocp-color-bg-1: #ffffff;
+    --seocp-color-bg-2: #f7f7f8;
+    --seocp-color-bg-3: #efeff1;
+    --seocp-color-bg-4: #e6e6ea;
+    --seocp-color-bg-5: #d6d6dc;
+    --seocp-color-bg-6: #c4c4cc;
+
+    /* Foreground contrast ratios on bg-1 (#ffffff):
+       fg-1 #1a1a1f -> 16.6:1   |  fg-2 #2c2c33 -> 13.2:1
+       fg-3 #4a4a55 -> 8.5:1    |  fg-4 #5d5d68 -> 6.5:1   (all > AA-large) */
+    --seocp-color-fg-1: #1a1a1f;
+    --seocp-color-fg-2: #2c2c33;
+    --seocp-color-fg-3: #4a4a55;
+    --seocp-color-fg-4: #5d5d68;
+
+    --seocp-color-stroke-1: #c8c8d0;
+    --seocp-color-stroke-2: #e1e1e6;
+    --seocp-color-stroke-focus: #0f6cbd;
+
+    /* Brand ramp ------------------------------------------------------------ */
+    --seocp-brand-10: #061724;
+    --seocp-brand-20: #082338;
+    --seocp-brand-30: #0a2e4a;
+    --seocp-brand-40: #0c3b5e;
+    --seocp-brand-50: #0e4775;
+    --seocp-brand-60: #0f548c;
+    --seocp-brand-70: #115ea3;
+    --seocp-brand-80: #0f6cbd;
+    --seocp-brand-90: #2886de;
+    --seocp-brand-100: #479ef5;
+    --seocp-brand-110: #62abf5;
+    --seocp-brand-120: #77b7f7;
+    --seocp-brand-130: #96c6fa;
+    --seocp-brand-140: #b4d6fa;
+    --seocp-brand-150: #cfe4fa;
+    --seocp-brand-160: #ebf3fc;
+
+    --seocp-color-brand: var(--seocp-brand-70);          /* 5.7:1 on white */
+    --seocp-color-brand-hover: var(--seocp-brand-60);
+    --seocp-color-brand-pressed: var(--seocp-brand-50);
+    --seocp-color-brand-fg-on: #ffffff;
+    --seocp-color-brand-bg-tint: var(--seocp-brand-160);
+
+    /* Status (AA on white) ------------------------------------------------- */
+    --seocp-color-success: #0d6b0d;
+    --seocp-color-success-bg: #e7f6e7;
+    --seocp-color-warning: #8a6d00;
+    --seocp-color-warning-bg: #fff4ce;
+    --seocp-color-danger: #a4262c;
+    --seocp-color-danger-bg: #fde7e9;
+    --seocp-color-info: var(--seocp-brand-70);
+    --seocp-color-info-bg: var(--seocp-brand-160);
+
+    /* Depth ---------------------------------------------------------------- */
+    --seocp-shadow-2:   0 1px 2px rgba(15, 22, 36, 0.10), 0 0 1px rgba(15, 22, 36, 0.08);
+    --seocp-shadow-4:   0 2px 4px rgba(15, 22, 36, 0.10), 0 0 1px rgba(15, 22, 36, 0.08);
+    --seocp-shadow-8:   0 4px 8px rgba(15, 22, 36, 0.10), 0 0 1px rgba(15, 22, 36, 0.08);
+    --seocp-shadow-16:  0 8px 16px rgba(15, 22, 36, 0.12), 0 0 1px rgba(15, 22, 36, 0.08);
+    --seocp-shadow-28:  0 14px 28px rgba(15, 22, 36, 0.16), 0 0 4px rgba(15, 22, 36, 0.10);
+    --seocp-shadow-64:  0 32px 64px rgba(15, 22, 36, 0.20), 0 0 8px rgba(15, 22, 36, 0.12);
+
+    /* Motion --------------------------------------------------------------- */
+    --seocp-duration-ultra-fast: 50ms;
+    --seocp-duration-faster: 100ms;
+    --seocp-duration-fast: 150ms;
+    --seocp-duration-normal: 200ms;
+    --seocp-duration-slow: 300ms;
+    --seocp-duration-slower: 400ms;
+    --seocp-duration-ultra-slow: 500ms;
+    --seocp-curve-decelerate-max: cubic-bezier(0.0, 0.0, 0.0, 1.0);
+    --seocp-curve-decelerate: cubic-bezier(0.1, 0.9, 0.2, 1.0);
+    --seocp-curve-accelerate: cubic-bezier(0.7, 0.0, 1.0, 0.5);
+    --seocp-curve-accelerate-max: cubic-bezier(1.0, 0.0, 1.0, 1.0);
+
+    /* Corner radius -------------------------------------------------------- */
+    --seocp-radius-none: 0;
+    --seocp-radius-small: 2px;
+    --seocp-radius-medium: 4px;
+    --seocp-radius-large: 8px;
+    --seocp-radius-xlarge: 12px;
+    --seocp-radius-circular: 9999px;
+
+    /* Spacing -------------------------------------------------------------- */
+    --seocp-space-xxs: 2px;
+    --seocp-space-xs: 4px;
+    --seocp-space-s: 8px;
+    --seocp-space-m: 12px;
+    --seocp-space-l: 16px;
+    --seocp-space-xl: 20px;
+    --seocp-space-xxl: 24px;
+    --seocp-space-xxxl: 32px;
+    --seocp-space-xxxxl: 48px;
+
+    color: var(--seocp-color-fg-1);
+    font-family: var(--seocp-font-family-base);
+    font-size: var(--seocp-font-size-300);
+    line-height: var(--seocp-line-height-300);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* Dark theme (opt-in only) ------------------------------------------------ */
+.seocp-app[data-theme="dark"] {
+    --seocp-color-bg-1: #1f1f23;
+    --seocp-color-bg-2: #292930;
+    --seocp-color-bg-3: #33333a;
+    --seocp-color-bg-4: #3d3d45;
+    --seocp-color-bg-5: #4a4a52;
+    --seocp-color-bg-6: #5c5c66;
+    --seocp-color-fg-1: #f5f5f7;
+    --seocp-color-fg-2: #d6d6da;
+    --seocp-color-fg-3: #a5a5ad;
+    --seocp-color-fg-4: #8a8a92;
+    --seocp-color-stroke-1: #4a4a52;
+    --seocp-color-stroke-2: #3d3d45;
+    --seocp-color-brand: var(--seocp-brand-100);
+    --seocp-color-brand-hover: var(--seocp-brand-110);
+    --seocp-color-brand-pressed: var(--seocp-brand-90);
+    --seocp-color-brand-bg-tint: rgba(71, 158, 245, 0.16);
+    --seocp-color-success-bg: rgba(13, 107, 13, 0.20);
+    --seocp-color-warning-bg: rgba(138, 109, 0, 0.22);
+    --seocp-color-danger-bg: rgba(164, 38, 44, 0.20);
+    --seocp-color-info-bg: rgba(71, 158, 245, 0.12);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .seocp-app, .seocp-app * {
+        animation-duration: 0.001ms !important;
+        transition-duration: 0.001ms !important;
+    }
+}
+
+@media (forced-colors: active) {
+    .seocp-app {
+        --seocp-color-fg-1: CanvasText;
+        --seocp-color-fg-2: CanvasText;
+        --seocp-color-fg-3: GrayText;
+        --seocp-color-bg-1: Canvas;
+        --seocp-color-bg-2: Canvas;
+        --seocp-color-stroke-1: GrayText;
+        --seocp-color-stroke-2: GrayText;
+        --seocp-color-brand: Highlight;
+        --seocp-color-brand-fg-on: HighlightText;
+    }
+}

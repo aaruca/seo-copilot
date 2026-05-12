@@ -1,0 +1,122 @@
+/* SEO Copilot — page-level layout glued onto Fluent components.
+   The shell always renders light unless the user opts into dark via data-theme. */
+
+/* Reset wp-admin's left/right padding inside our wrapper. */
+.wrap > .seocp-app {
+    margin: 12px 20px 32px 0;
+    padding: 0;
+}
+
+.seocp-app {
+    background: transparent;     /* let wp-admin background show through */
+    color: var(--seocp-color-fg-1);
+    min-height: 60vh;
+}
+
+/* Page container — capped width, lots of breathing room. */
+.seocp-page {
+    max-width: 1280px;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--seocp-space-xl);
+}
+
+/* WP admin notices live above the page; ensure our toolbar isn't crammed. */
+.seocp-page > .fl-toolbar:first-child { margin-top: var(--seocp-space-xs); }
+
+/* Field-matrix row in Settings -> Post Types. */
+.seocp-pt-row {
+    border: 1px solid var(--seocp-color-stroke-2);
+    border-radius: var(--seocp-radius-large);
+    background: var(--seocp-color-bg-1);
+    box-shadow: var(--seocp-shadow-2);
+}
+.seocp-pt-row + .seocp-pt-row { margin-top: var(--seocp-space-m); }
+.seocp-pt-row__head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: var(--seocp-space-m);
+    padding: var(--seocp-space-m) var(--seocp-space-l);
+    cursor: pointer;
+}
+.seocp-pt-row__body {
+    border-top: 1px solid var(--seocp-color-stroke-2);
+    padding: var(--seocp-space-l);
+    background: var(--seocp-color-bg-2);
+    border-bottom-left-radius: var(--seocp-radius-large);
+    border-bottom-right-radius: var(--seocp-radius-large);
+}
+.seocp-pt-row[data-collapsed="true"] .seocp-pt-row__body { display: none; }
+
+.seocp-field-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: var(--seocp-space-s) var(--seocp-space-l);
+}
+
+/* Diff (current vs proposed). */
+.seocp-diff {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--seocp-space-l);
+    align-items: stretch;
+}
+@media (max-width: 1100px) { .seocp-diff { grid-template-columns: 1fr; } }
+.seocp-diff__col {
+    background: var(--seocp-color-bg-2);
+    border: 1px solid var(--seocp-color-stroke-2);
+    border-radius: var(--seocp-radius-medium);
+    padding: var(--seocp-space-m);
+}
+.seocp-diff__col h4 {
+    margin: 0 0 var(--seocp-space-xs);
+    font-size: var(--seocp-font-size-200);
+    color: var(--seocp-color-fg-3);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: var(--seocp-font-weight-semibold);
+}
+.seocp-diff__current {
+    white-space: pre-wrap; margin: 0;
+    font-family: inherit;
+    color: var(--seocp-color-fg-2);
+    font-size: var(--seocp-font-size-300);
+    background: var(--seocp-color-bg-1);
+    border: 1px dashed var(--seocp-color-stroke-2);
+    border-radius: var(--seocp-radius-medium);
+    padding: var(--seocp-space-m);
+    min-height: 88px;
+}
+
+/* Field block (used in proposal review). */
+.seocp-fieldblock {
+    border: 1px solid var(--seocp-color-stroke-2);
+    border-radius: var(--seocp-radius-large);
+    padding: var(--seocp-space-l);
+    background: var(--seocp-color-bg-1);
+}
+.seocp-fieldblock + .seocp-fieldblock { margin-top: var(--seocp-space-m); }
+.seocp-fieldblock__head { display: flex; align-items: center; gap: var(--seocp-space-s); margin-bottom: var(--seocp-space-s); }
+.seocp-fieldblock__id { font-family: var(--seocp-font-family-mono); font-size: 12.5px; color: var(--seocp-color-fg-3); }
+
+/* Compact metabox layout. */
+.seocp-metabox-host { padding: var(--seocp-space-m) 0; }
+#seocp-metabox .fl-field { margin-bottom: var(--seocp-space-s); }
+
+/* Post-picker results grid. */
+.seocp-results {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--seocp-space-s);
+    max-height: 360px;
+    overflow: auto;
+    padding-right: var(--seocp-space-xs);
+}
+
+/* Cost preview block. */
+.seocp-cost-card {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: var(--seocp-space-l);
+}
