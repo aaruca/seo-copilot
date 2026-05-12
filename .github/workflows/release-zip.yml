@@ -1,0 +1,37 @@
+name: Build Release ZIP
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build plugin ZIP
+        run: |
+          mkdir -p /tmp/seo-copilot
+          rsync -a \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.DS_Store' \
+            --exclude='build-zip.ps1' \
+            --exclude='*.log' \
+            ./ /tmp/seo-copilot/
+          cd /tmp
+          zip -r seo-copilot-${{ github.event.release.tag_name }}.zip seo-copilot/
+
+      - name: Upload ZIP to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload ${{ github.event.release.tag_name }} \
+            /tmp/seo-copilot-${{ github.event.release.tag_name }}.zip \
+            --repo ${{ github.repository }} \
+            --clobber

@@ -1,0 +1,16 @@
+# General
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
+
+# WordPress / Build
+node_modules/
+vendor/
+dist/
+.build/
+*.zip
+
+# Local config
+wp-config.php

@@ -1,0 +1,6 @@
+# Exclude dev files from release ZIPs
+.github/         export-ignore
+.gitignore       export-ignore
+.gitattributes   export-ignore
+build-zip.ps1    export-ignore
+*.log            export-ignore
