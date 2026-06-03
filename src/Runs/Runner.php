@@ -146,6 +146,65 @@ class Runner
     }
 
     /**
+     * Ingest an AI response that was produced out-of-band (e.g. by the OpenAI
+     * Batch API). Performs the same post-processing as `generate()` — picker
+     * intersect, product-name guardrails, Run record — but skips the live AI
+     * call. Returns the cleaned proposal array.
+     *
+     * @param array<int, string> $picked_fields
+     * @return array<string, string>
+     */
+    public function ingest_batch_result(
+        int $post_id,
+        int $template_id,
+        array $picked_fields,
+        string $content_json,
+        int $tokens_in,
+        int $tokens_out,
+        float $cost,
+        string $model,
+        ?string $batch_id
+    ): array {
+        $tpl = $this->templates->find($template_id);
+        if (!$tpl) {
+            throw new \RuntimeException('Template not found.');
+        }
+        $allowed = $this->intersect_picked($tpl, $picked_fields, get_post_type($post_id) ?: '');
+        if ($allowed === []) {
+            throw new \RuntimeException('No allowed fields after intersecting template + picker.');
+        }
+        $payload = json_decode($content_json, true);
+        if (!is_array($payload)) {
+            throw new \RuntimeException('AI did not return valid JSON.');
+        }
+        $proposal = [];
+        foreach ($allowed as $fid) {
+            if (isset($payload[$fid]) && is_string($payload[$fid])) {
+                $proposal[$fid] = $payload[$fid];
+            } elseif (isset($payload[$fid]) && (is_int($payload[$fid]) || is_float($payload[$fid]))) {
+                $proposal[$fid] = (string) $payload[$fid];
+            }
+        }
+        $this->enforce_product_name_in_title($post_id, $proposal);
+        $this->enforce_product_name_in_keywords($post_id, $proposal);
+
+        $run = new Run();
+        $run->post_id        = $post_id;
+        $run->post_type      = (string) get_post_type($post_id);
+        $run->template_id    = $tpl->id;
+        $run->status         = 'proposed';
+        $run->fields_written = [];
+        $run->tokens_in      = $tokens_in;
+        $run->tokens_out     = $tokens_out;
+        $run->cost           = $cost;
+        $run->model          = $model;
+        $run->batch_id       = $batch_id;
+        $this->runs->record($run);
+
+        return $proposal;
+    }
+
+    /**
      * For product runs, ensure every SEO title field contains the original
      * product name verbatim (case-insensitive substring). If the AI omitted
      * it, we prepend the product name and trim the combined title to 60 chars

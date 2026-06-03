@@ -53,6 +53,8 @@ class RunsController extends Controller
                 'fields'               => ['type' => 'array',   'required' => true],
                 // 'apply' (auto-apply, default) or 'review' (store proposals for later review)
                 'mode'                 => ['type' => 'string',  'required' => false],
+                // 'sync' (per-post HTTP, default) or 'batch' (OpenAI Batch API — 50% cheaper, async)
+                'dispatch'             => ['type' => 'string',  'required' => false],
             ],
         ]);
 
@@ -150,8 +152,12 @@ class RunsController extends Controller
         $template_id = (int) $req->get_param('template_id');
         $fields      = array_map('sanitize_key', (array) $req->get_param('fields'));
         $mode        = (string) ($req->get_param('mode') ?: 'apply');
+        $dispatch    = (string) ($req->get_param('dispatch') ?: 'sync');
         if (!in_array($mode, ['apply', 'review'], true)) {
             $mode = 'apply';
+        }
+        if (!in_array($dispatch, ['sync', 'batch'], true)) {
+            $dispatch = 'sync';
         }
         if (!$template_id || !$fields) {
             return new \WP_REST_Response(['error' => 'missing_template_or_fields'], 400);
@@ -176,8 +182,9 @@ class RunsController extends Controller
             if ($filter['post_type'] === '') {
                 return new \WP_REST_Response(['error' => 'missing_post_type'], 400);
             }
-            $result = $this->bulk->enqueue_from_filter($filter, $template_id, $fields, $mode);
-            $result['mode'] = $mode;
+            $result = $this->bulk->enqueue_from_filter($filter, $template_id, $fields, $mode, $dispatch);
+            $result['mode']     = $mode;
+            $result['dispatch'] = $result['dispatch'] ?? $dispatch;
             return rest_ensure_response($result);
         }
 
@@ -191,7 +198,13 @@ class RunsController extends Controller
                 return new \WP_REST_Response(['error' => 'forbidden_post', 'post_id' => $pid], 403);
             }
         }
-        $batch_id = $this->bulk->enqueue($post_ids, $template_id, $fields, $mode);
-        return rest_ensure_response(['batch_id' => $batch_id, 'count' => count($post_ids), 'truncated' => false, 'mode' => $mode]);
+        $batch_id = $this->bulk->enqueue($post_ids, $template_id, $fields, $mode, $dispatch);
+        return rest_ensure_response([
+            'batch_id'  => $batch_id,
+            'count'     => count($post_ids),
+            'truncated' => false,
+            'mode'      => $mode,
+            'dispatch'  => $dispatch,
+        ]);
     }
 }

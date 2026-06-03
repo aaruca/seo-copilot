@@ -16,6 +16,7 @@ use SeoCopilot\Fields\Providers\WooCommerceFieldsProvider;
 use SeoCopilot\Fields\Providers\YoastFieldsProvider;
 use SeoCopilot\PostTypes\PostTypeProbe;
 use SeoCopilot\PostTypes\PostTypeRegistry;
+use SeoCopilot\Providers\OpenAIBatchClient;
 use SeoCopilot\Providers\OpenAIProvider;
 use SeoCopilot\Providers\PromptAssembler;
 use SeoCopilot\Rest\FieldsController;
@@ -26,7 +27,9 @@ use SeoCopilot\Rest\PreviewController;
 use SeoCopilot\Rest\RunsController;
 use SeoCopilot\Rest\SegmentsController;
 use SeoCopilot\Rest\TemplatesController;
+use SeoCopilot\Runs\BatchDispatcher;
 use SeoCopilot\Runs\BulkRunner;
+use SeoCopilot\Runs\OpenAIBatchRepository;
 use SeoCopilot\Runs\RunRepository;
 use SeoCopilot\Runs\Runner;
 use SeoCopilot\Runs\SegmentRepository;
@@ -161,7 +164,23 @@ class Plugin
             $c->get(Logger::class)
         ));
         $c->set(SegmentRepository::class, fn() => new SegmentRepository());
-        $c->set(BulkRunner::class, fn($c) => new BulkRunner($c->get(Runner::class), $c->get(Logger::class), $c->get(SegmentRepository::class)));
+        $c->set(OpenAIBatchClient::class, fn($c) => new OpenAIBatchClient($c->get(Logger::class)));
+        $c->set(OpenAIBatchRepository::class, fn() => new OpenAIBatchRepository());
+        $c->set(BatchDispatcher::class, fn($c) => new BatchDispatcher(
+            $c->get(OpenAIBatchClient::class),
+            $c->get(PromptAssembler::class),
+            $c->get(TemplateRepository::class),
+            $c->get(Runner::class),
+            $c->get(SegmentRepository::class),
+            $c->get(OpenAIBatchRepository::class),
+            $c->get(Logger::class)
+        ));
+        $c->set(BulkRunner::class, fn($c) => new BulkRunner(
+            $c->get(Runner::class),
+            $c->get(Logger::class),
+            $c->get(SegmentRepository::class),
+            $c->get(BatchDispatcher::class)
+        ));
 
         // Admin.
         $c->set(AdminMenu::class, fn($c) => new AdminMenu($c->get(PostTypeRegistry::class)));
