@@ -1,0 +1,56 @@
+name: Cut release
+
+# One-shot workflow that creates a git tag + GitHub release for the current
+# checked-out commit. Notes are extracted from CHANGELOG.md by matching the
+# `## [X.Y.Z]` section that corresponds to the input tag (the `v` prefix is
+# stripped before matching).
+#
+# Triggered manually from Actions → "Cut release" → Run workflow, or via the
+# GitHub API. The existing release-zip.yml workflow fires on `release:
+# published` and attaches the built plugin ZIP automatically.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to create (e.g. v1.1.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  cut:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract release notes from CHANGELOG.md
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          version="${TAG#v}"
+          awk -v v="$version" '
+            $0 ~ "^## \\["v"\\]" { in_section = 1; next }
+            in_section && /^## \[/ { exit }
+            in_section { print }
+          ' CHANGELOG.md > /tmp/notes.md
+          if [ ! -s /tmp/notes.md ]; then
+            echo "No CHANGELOG section found for [$version] — falling back to a stub."
+            printf 'Release %s\n' "$TAG" > /tmp/notes.md
+          fi
+          echo '--- Notes preview ---'
+          cat /tmp/notes.md
+          echo '---------------------'
+
+      - name: Create tag + release
+        env:
+          TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "SEO Copilot $TAG" \
+            --notes-file /tmp/notes.md
