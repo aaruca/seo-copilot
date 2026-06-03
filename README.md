@@ -1,6 +1,6 @@
 # SEO Copilot
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Version](https://img.shields.io/badge/version-1.1.0-blue)
 ![PHP](https://img.shields.io/badge/php-%3E%3D7.4-8892BF)
 ![WordPress](https://img.shields.io/badge/wordpress-%3E%3D6.2-21759B)
 ![License](https://img.shields.io/badge/license-GPL--2.0--or--later-green)
@@ -96,7 +96,7 @@ All endpoints are under the `seocp/v1` namespace and require `manage_options` ca
 
 ## Changelog
 
-### Unreleased
+### v1.1.0
 * **OpenAI Batch API dispatch** in the Bulk Wizard — 50% cheaper, no rate-limit ceiling, async (results return within 24h). Recommended for 500+ post jobs. Pick it in Step 4 → Processing mode.
 * Raised the per-minute rate-limit cap from 600 to 10,000 for users on higher OpenAI tiers.
 

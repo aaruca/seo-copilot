@@ -5,7 +5,7 @@ All notable changes to **SEO Copilot** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.0] — 2026-06-03
 
 ### Added
 - **OpenAI Batch API dispatch** in the Bulk Wizard — submit large jobs (e.g. 50k+ products) to OpenAI's Batch API for **50% lower token cost** and no per-minute rate-limit ceiling. Results return within 24h and apply automatically as they download. Pick "OpenAI Batch API" in Step 4 → Processing mode.
@@ -35,4 +35,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **REST API** — full `seocp/v1` namespace for all operations.
 - **Logging and diagnostics** — run history, per-segment audit trail, WP-Cron diagnostics.
 
+[1.1.0]: https://github.com/aaruca/seo-copilot/releases/tag/v1.1.0
 [1.0.0]: https://github.com/aaruca/seo-copilot/releases/tag/v1.0.0
