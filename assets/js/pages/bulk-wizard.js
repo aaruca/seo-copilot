@@ -9,6 +9,7 @@
         step: 0,
         templates: [],
         mode: 'apply',          // 'apply' (auto-apply) or 'review' (queue to Pending Review)
+        dispatch: 'sync',       // 'sync' (per-post HTTP) or 'batch' (OpenAI Batch API)
         // filter (persisted across pagination)
         filter: { post_type: '', status: 'publish', q: '', preset: '' },
         // pagination
@@ -251,6 +252,8 @@
         var fields = Object.keys(state.picked).filter(function (k) { return state.picked[k]; }).length;
         var calls  = posts;
         var costEst = posts * Math.max(0.001, fields * 0.0008);
+        // OpenAI's Batch API is 50% cheaper on tokens.
+        if (state.dispatch === 'batch') costEst = costEst * 0.5;
         $('seocp-bulk-kpi-posts').textContent  = fmtNumber(posts);
         $('seocp-bulk-kpi-fields').textContent = fields;
         $('seocp-bulk-kpi-calls').textContent  = fmtNumber(calls);
@@ -274,14 +277,15 @@
                 filter: state.filter,
                 template_id: template_id,
                 fields: fields,
-                mode: state.mode
+                mode: state.mode,
+                dispatch: state.dispatch
             };
         } else {
             var post_ids = Object.keys(state.selected)
                 .filter(function (k) { return state.selected[k]; })
                 .map(function (n) { return parseInt(n, 10); });
             if (!post_ids.length) { btn.disabled = false; btn.textContent = 'Queue batch'; toast('No posts selected.', 'warning'); return; }
-            payload = { post_ids: post_ids, template_id: template_id, fields: fields, mode: state.mode };
+            payload = { post_ids: post_ids, template_id: template_id, fields: fields, mode: state.mode, dispatch: state.dispatch };
         }
 
         rest.post('bulk', payload)
@@ -335,8 +339,25 @@
     function schedulePoll(p) {
         var done = (p.completed || 0) + (p.failed || 0) + (p.cancelled || 0);
         if (p.total && done < p.total) {
-            state.pollTimer = setTimeout(tickAndPoll, 4000);
+            // Batch mode advances every cron tick, so back off polling a bit.
+            var delay = (p.dispatch === 'batch') ? 15000 : 4000;
+            state.pollTimer = setTimeout(tickAndPoll, delay);
         }
+    }
+
+    function renderBatchChunkSummary(chunks) {
+        if (!chunks || !chunks.length) return '';
+        var pills = chunks.map(function (c) {
+            var s = (c.status || '').toLowerCase();
+            var kind = 'fl-badge';
+            if (s === 'completed') kind = 'fl-badge fl-badge--success';
+            else if (s === 'failed' || s === 'expired' || s === 'cancelled') kind = 'fl-badge fl-badge--danger';
+            else if (s === 'in_progress' || s === 'finalizing' || s === 'validating' || s === 'submitted') kind = 'fl-badge fl-badge--info';
+            var n = (c.completed_count || 0) + '/' + (c.request_count || 0);
+            return '<span class="' + kind + '" title="' + esc(c.openai_batch_id || '') + '">' + esc(s) + ' ' + n + '</span>';
+        }).join(' ');
+        return '<div class="fl-row" style="flex-wrap:wrap;margin-top:8px;gap:6px;">' +
+            '<span class="fl-muted fl-text-200">OpenAI chunks:</span> ' + pills + '</div>';
     }
 
     function renderProgress(p) {
@@ -345,10 +366,14 @@
         var cancelled = p.cancelled || 0;
         var pending = p.pending || 0;
         var running = p.running || 0;
+        var submitted = p.submitted || 0;
+        var ready = p.ready || 0;
+        var applying = p.applying || 0;
+        var isBatch = p.dispatch === 'batch';
         var done = completed + failed + cancelled;
         var pct = p.total ? Math.round(100 * done / p.total) : 0;
         var isComplete = p.total > 0 && done >= p.total;
-        var hasPending = pending > 0 || running > 0;
+        var hasPending = pending > 0 || running > 0 || submitted > 0 || ready > 0 || applying > 0;
         var host = $('seocp-bulk-progress');
 
         // Real-write outcome from the runs table — separates "wrote ≥1 field"
@@ -382,11 +407,15 @@
             '<div class="fl-progress" style="margin:8px 0;"><div class="fl-progress__fill" style="width:' + pct + '%"></div></div>' +
             '<div class="fl-row" style="flex-wrap:wrap;">' +
                 '<span class="fl-badge">pending ' + fmtNumber(pending) + '</span> ' +
-                '<span class="fl-badge fl-badge--info">running ' + fmtNumber(running) + '</span> ' +
+                (isBatch ? '<span class="fl-badge fl-badge--info">submitted ' + fmtNumber(submitted) + '</span> ' : '') +
+                (isBatch ? '<span class="fl-badge fl-badge--info">ready ' + fmtNumber(ready) + '</span> ' : '') +
+                (isBatch ? '<span class="fl-badge fl-badge--info">applying ' + fmtNumber(applying) + '</span> ' : '') +
+                (!isBatch ? '<span class="fl-badge fl-badge--info">running ' + fmtNumber(running) + '</span> ' : '') +
                 '<span class="fl-badge">completed ' + fmtNumber(completed) + '</span> ' +
                 '<span class="fl-badge fl-badge--danger">failed ' + fmtNumber(failed) + '</span> ' +
                 (cancelled > 0 ? '<span class="fl-badge fl-badge--warning">cancelled ' + fmtNumber(cancelled) + '</span> ' : '') +
             '</div>' +
+            (isBatch ? renderBatchChunkSummary(p.openai_chunks || []) : '') +
             // Real write outcome — what actually changed in the database.
             (state.mode === 'review'
                 ? '<div class="fl-row" style="flex-wrap:wrap;margin-top:6px;">' +
@@ -427,6 +456,7 @@
                     (noOp > 0 ? ' (' + fmtNumber(noOp) + ' no-op)' : '') +
                     (failed > 0 ? ', ' + fmtNumber(failed) + ' failed' : '') +
                     (cancelled > 0 ? ', ' + fmtNumber(cancelled) + ' cancelled' : '') +
+                    (isBatch ? ' via OpenAI Batch API (50% token discount applied)' : '') +
                     '. Applied changes are saved — nothing is rolled back.';
             }
 
@@ -457,6 +487,8 @@
                     '</div>' +
                 '</div>' +
             '</div>';
+        } else if (isBatch) {
+            html += '<div class="fl-muted fl-text-200" style="margin-top:8px;">Submitted to OpenAI Batch API — results return within 24h (often much sooner) and apply automatically as they download. You can close this page; come back anytime to check progress.</div>';
         } else if (state.mode === 'review') {
             html += '<div class="fl-muted fl-text-200" style="margin-top:8px;">Generating proposals — saved to Pending Review as each post finishes. Nothing is written yet.</div>';
         } else {
@@ -518,7 +550,10 @@
             // Auto-expand the panel if there's an active batch (pending or running).
             // User-initiated toggles are persisted in sessionStorage and respected
             // unless an active batch overrides.
-            var hasActive = batches.some(function (b) { return (b.pending || 0) > 0 || (b.running || 0) > 0; });
+            var hasActive = batches.some(function (b) {
+                return (b.pending || 0) > 0 || (b.running || 0) > 0 ||
+                       (b.submitted || 0) > 0 || (b.ready || 0) > 0 || (b.applying || 0) > 0;
+            });
             var userPref = null;
             try { userPref = sessionStorage.getItem('seocp_recent_collapsed'); } catch (_) {}
             var shouldCollapse = hasActive ? false : (userPref === null ? true : userPref === 'true');
@@ -531,9 +566,16 @@
                 var cancelled = b.cancelled || 0;
                 var pending = b.pending || 0;
                 var running = b.running || 0;
+                var submitted = b.submitted || 0;
+                var ready = b.ready || 0;
+                var applying = b.applying || 0;
+                var inFlight = pending + running + submitted + ready + applying;
                 var done = completed + failed + cancelled;
                 var pct = b.total ? Math.round(100 * done / b.total) : 0;
-                var isActive = pending > 0 || running > 0;
+                var isActive = inFlight > 0;
+                var dispatchBadge = (b.dispatch === 'batch')
+                    ? ' <span class="fl-badge fl-badge--info" title="OpenAI Batch API — 50% off">batch</span>'
+                    : '';
                 var isComplete = b.total > 0 && done >= b.total;
                 var stateBadge;
                 if (isActive)              stateBadge = '<span class="fl-badge fl-badge--info">Running</span>';
@@ -549,6 +591,7 @@
                     '<div class="fl-row" style="margin-bottom:6px;">' +
                         '<strong>' + esc(b.started_at || '—') + '</strong> ' +
                         '<span class="fl-mono fl-muted" style="font-size:11px;">' + esc((b.batch_id || '').slice(0, 8)) + '</span>' +
+                        dispatchBadge +
                         '<span class="fl-spacer"></span>' +
                         stateBadge +
                     '</div>' +
@@ -647,6 +690,18 @@
                 document.querySelectorAll('label[data-mode-option]').forEach(function (lbl) {
                     lbl.setAttribute('aria-selected', String(lbl.getAttribute('data-mode-option') === state.mode));
                 });
+            });
+        });
+
+        // Dispatch toggle (synchronous vs OpenAI Batch API).
+        document.querySelectorAll('input[name="seocp-bulk-dispatch"]').forEach(function (radio) {
+            radio.addEventListener('change', function (e) {
+                state.dispatch = e.target.value === 'batch' ? 'batch' : 'sync';
+                document.querySelectorAll('label[data-dispatch-option]').forEach(function (lbl) {
+                    lbl.setAttribute('aria-selected', String(lbl.getAttribute('data-dispatch-option') === state.dispatch));
+                });
+                // Refresh cost estimate — Batch is 50% off.
+                renderConfirm();
             });
         });
 

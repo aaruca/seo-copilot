@@ -175,6 +175,28 @@ $tpl_payload = array_map(static function (Template $t) {
             <hr class="fl-divider" />
 
             <div class="fl-field">
+                <label class="fl-field__label"><?php esc_html_e('Processing mode', 'seo-copilot'); ?></label>
+                <div class="fl-stack">
+                    <label class="fl-selectable" data-dispatch-option="sync" aria-selected="true" style="cursor:pointer;">
+                        <input type="radio" name="seocp-bulk-dispatch" value="sync" checked style="margin-right:12px;" />
+                        <div class="fl-selectable__body">
+                            <div class="fl-selectable__title"><?php esc_html_e('Synchronous (default)', 'seo-copilot'); ?></div>
+                            <div class="fl-selectable__meta"><?php esc_html_e('Each post calls OpenAI directly. Live progress, immediate writes. Subject to the per-minute rate limit. Best for small batches (under ~500 posts).', 'seo-copilot'); ?></div>
+                        </div>
+                    </label>
+                    <label class="fl-selectable" data-dispatch-option="batch" style="cursor:pointer;">
+                        <input type="radio" name="seocp-bulk-dispatch" value="batch" style="margin-right:12px;" />
+                        <div class="fl-selectable__body">
+                            <div class="fl-selectable__title"><?php esc_html_e('OpenAI Batch API (50% cheaper, recommended for 500+ posts)', 'seo-copilot'); ?></div>
+                            <div class="fl-selectable__meta"><?php esc_html_e('All posts submitted to OpenAI\'s Batch API in chunks of 5,000. Half the token price. No per-minute rate limit. Results return within 24h (often much sooner) — you can close this page; we\'ll apply each result as it comes back.', 'seo-copilot'); ?></div>
+                        </div>
+                    </label>
+                </div>
+            </div>
+
+            <hr class="fl-divider" />
+
+            <div class="fl-field">
                 <label class="fl-field__label"><?php esc_html_e('How should changes be applied?', 'seo-copilot'); ?></label>
                 <div class="fl-stack">
                     <label class="fl-selectable" data-mode-option="apply" aria-selected="true" style="cursor:pointer;">

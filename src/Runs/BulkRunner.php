@@ -22,12 +22,22 @@ class BulkRunner
     private Runner $runner;
     private Logger $logger;
     private SegmentRepository $segments;
+    private ?BatchDispatcher $dispatcher;
 
-    public function __construct(Runner $runner, Logger $logger, SegmentRepository $segments)
+    public function __construct(Runner $runner, Logger $logger, SegmentRepository $segments, ?BatchDispatcher $dispatcher = null)
     {
-        $this->runner   = $runner;
-        $this->logger   = $logger;
-        $this->segments = $segments;
+        $this->runner     = $runner;
+        $this->logger     = $logger;
+        $this->segments   = $segments;
+        $this->dispatcher = $dispatcher;
+    }
+
+    private function dispatcher(): BatchDispatcher
+    {
+        if (!$this->dispatcher) {
+            throw new \RuntimeException('BatchDispatcher is not wired — OpenAI Batch mode unavailable.');
+        }
+        return $this->dispatcher;
     }
 
     private function table(): string
@@ -41,11 +51,13 @@ class BulkRunner
      * @param array<int, int>    $post_ids
      * @param array<int, string> $fields
      * @param string             $mode      'apply' (write immediately) or 'review' (store proposals for later review)
+     * @param string             $dispatch  'sync' (per-post HTTP call, default) or 'batch' (OpenAI Batch API — 50% cheaper, async)
      */
-    public function enqueue(array $post_ids, int $template_id, array $fields, string $mode = 'apply'): string
+    public function enqueue(array $post_ids, int $template_id, array $fields, string $mode = 'apply', string $dispatch = 'sync'): string
     {
         global $wpdb;
         $mode = self::normalize_mode($mode);
+        $dispatch = self::normalize_dispatch($dispatch);
         $batch_id = wp_generate_uuid4();
         $now = current_time('mysql');
         $fields_json = wp_json_encode(array_values($fields));
@@ -53,8 +65,8 @@ class BulkRunner
         $rows = [];
         foreach ($post_ids as $pid) {
             $rows[] = $wpdb->prepare(
-                '(%s, %d, %d, %s, %s, %s, %d, %s)',
-                $batch_id, (int) $pid, $template_id, $fields_json, $mode, 'pending', 0, $now
+                '(%s, %d, %d, %s, %s, %s, %s, %d, %s)',
+                $batch_id, (int) $pid, $template_id, $fields_json, $mode, $dispatch, 'pending', 0, $now
             );
             if (count($rows) >= self::INSERT_CHUNK) {
                 $this->insert_rows($rows);
@@ -63,6 +75,10 @@ class BulkRunner
         }
         if ($rows) {
             $this->insert_rows($rows);
+        }
+
+        if ($dispatch === 'batch') {
+            $this->dispatcher()->plan_chunks_for_batch($batch_id);
         }
         return $batch_id;
     }
@@ -75,10 +91,11 @@ class BulkRunner
      * @param array<int, string> $fields
      * @return array{batch_id:string,count:int,truncated:bool}
      */
-    public function enqueue_from_filter(array $filter, int $template_id, array $fields, string $mode = 'apply'): array
+    public function enqueue_from_filter(array $filter, int $template_id, array $fields, string $mode = 'apply', string $dispatch = 'sync'): array
     {
         global $wpdb;
         $mode = self::normalize_mode($mode);
+        $dispatch = self::normalize_dispatch($dispatch);
         $batch_id = wp_generate_uuid4();
         $now = current_time('mysql');
         $fields_json = wp_json_encode(array_values($fields));
@@ -110,8 +127,8 @@ class BulkRunner
             foreach ($ids as $pid) {
                 if ($count >= $cap) { $truncated = true; break 2; }
                 $rows[] = $wpdb->prepare(
-                    '(%s, %d, %d, %s, %s, %s, %d, %s)',
-                    $batch_id, (int) $pid, $template_id, $fields_json, $mode, 'pending', 0, $now
+                    '(%s, %d, %d, %s, %s, %s, %s, %d, %s)',
+                    $batch_id, (int) $pid, $template_id, $fields_json, $mode, $dispatch, 'pending', 0, $now
                 );
                 $count++;
                 if (count($rows) >= self::INSERT_CHUNK) {
@@ -128,7 +145,11 @@ class BulkRunner
             $this->insert_rows($rows);
         }
 
-        return ['batch_id' => $batch_id, 'count' => $count, 'truncated' => $truncated];
+        if ($dispatch === 'batch' && $count > 0) {
+            $this->dispatcher()->plan_chunks_for_batch($batch_id);
+        }
+
+        return ['batch_id' => $batch_id, 'count' => $count, 'truncated' => $truncated, 'dispatch' => $dispatch];
     }
 
     private static function normalize_mode(string $mode): string
@@ -136,12 +157,31 @@ class BulkRunner
         return $mode === 'review' ? 'review' : 'apply';
     }
 
+    private static function normalize_dispatch(string $dispatch): string
+    {
+        return $dispatch === 'batch' ? 'batch' : 'sync';
+    }
+
     /**
      * Cron worker: process up to N pending jobs per tick.
+     *
+     * Three phases run per tick:
+     *   1. Sync queue drain — the original behaviour (dispatch='sync' rows).
+     *   2. OpenAI Batch dispatcher — submit a draft chunk, poll active ones.
+     *   3. Batch apply — drain `dispatch='batch' AND status='ready'` rows.
      */
     public function run_due_batches(): void
     {
         $this->drain(null, (int) apply_filters('seocp_bulk_batch_size', 5));
+        if ($this->dispatcher) {
+            try {
+                $this->dispatcher->tick();
+                $apply_limit = (int) apply_filters('seocp_batch_apply_size', 500);
+                $this->dispatcher->drain_ready(null, max(1, $apply_limit));
+            } catch (\Throwable $e) {
+                $this->logger->error('Batch dispatcher tick failed', ['msg' => $e->getMessage()]);
+            }
+        }
     }
 
     /**
@@ -149,16 +189,30 @@ class BulkRunner
      * jobs in one HTTP request so batches advance even when WP-Cron is disabled
      * or the site has no traffic.
      *
-     * Returns the number of jobs processed.
+     * Returns the number of jobs processed (sync + batch-apply combined).
      */
     public function tick(int $limit, ?string $batch_id = null): int
     {
-        $limit = max(1, min(20, $limit));
-        return $this->drain($batch_id, $limit);
+        $limit = max(1, min(50, $limit));
+        $processed = $this->drain($batch_id, $limit);
+        if ($this->dispatcher) {
+            try {
+                // Browser-driven ticks also nudge the OpenAI batch lifecycle so
+                // users see progress without waiting for the next WP-Cron fire.
+                $this->dispatcher->submit_next_draft();
+                $this->dispatcher->poll_active();
+                $processed += $this->dispatcher->drain_ready($batch_id, $limit * 4);
+            } catch (\Throwable $e) {
+                $this->logger->error('Batch dispatcher tick (browser) failed', ['msg' => $e->getMessage()]);
+            }
+        }
+        return $processed;
     }
 
     /**
-     * Drain up to $limit pending jobs, optionally scoped to a single batch.
+     * Drain up to $limit pending **sync-dispatch** jobs, optionally scoped to a
+     * single batch. Batch-dispatch rows are advanced by BatchDispatcher and
+     * never enter this loop.
      */
     private function drain(?string $batch_id, int $limit): int
     {
@@ -166,12 +220,16 @@ class BulkRunner
         $now = current_time('mysql');
         if ($batch_id !== null) {
             $sql = $wpdb->prepare(
-                "SELECT * FROM {$this->table()} WHERE status = %s AND scheduled_for <= %s AND batch_id = %s ORDER BY id ASC LIMIT %d",
+                "SELECT * FROM {$this->table()}
+                  WHERE status = %s AND scheduled_for <= %s AND batch_id = %s AND dispatch = 'sync'
+                  ORDER BY id ASC LIMIT %d",
                 'pending', $now, $batch_id, $limit
             );
         } else {
             $sql = $wpdb->prepare(
-                "SELECT * FROM {$this->table()} WHERE status = %s AND scheduled_for <= %s ORDER BY id ASC LIMIT %d",
+                "SELECT * FROM {$this->table()}
+                  WHERE status = %s AND scheduled_for <= %s AND dispatch = 'sync'
+                  ORDER BY id ASC LIMIT %d",
                 'pending', $now, $limit
             );
         }
@@ -245,8 +303,12 @@ class BulkRunner
                     SUM(status = 'completed')           AS completed,
                     SUM(status = 'failed')              AS failed,
                     SUM(status = 'pending')             AS pending,
+                    SUM(status = 'submitted')           AS submitted,
+                    SUM(status = 'ready')               AS ready,
+                    SUM(status = 'applying')            AS applying,
                     SUM(status = 'running')             AS running,
                     SUM(status = 'cancelled')           AS cancelled,
+                    MAX(dispatch)                       AS dispatch,
                     MAX(template_id)                    AS template_id
              FROM {$this->table()}
              GROUP BY batch_id
@@ -265,8 +327,12 @@ class BulkRunner
                 'completed'        => (int) $r['completed'],
                 'failed'           => (int) $r['failed'],
                 'pending'          => (int) $r['pending'],
+                'submitted'        => (int) $r['submitted'],
+                'ready'            => (int) $r['ready'],
+                'applying'         => (int) $r['applying'],
                 'running'          => (int) $r['running'],
                 'cancelled'        => (int) $r['cancelled'],
+                'dispatch'         => (string) ($r['dispatch'] ?? 'sync'),
                 'template_id'      => (int) $r['template_id'],
             ];
         }
@@ -285,12 +351,23 @@ class BulkRunner
     {
         global $wpdb;
         $now = current_time('mysql');
+        // Cancel sync-mode pending jobs locally — they never reached OpenAI.
         $cancelled = (int) $wpdb->query($wpdb->prepare(
             "UPDATE {$this->table()}
                 SET status = %s, completed_at = %s
-              WHERE batch_id = %s AND status = %s",
+              WHERE batch_id = %s AND status = %s AND dispatch = 'sync'",
             'cancelled', $now, $batch_id, 'pending'
         ));
+        // Batch-dispatch rows: tell the dispatcher to call OpenAI's cancel API
+        // for any in-flight chunks and mark local rows as cancelled.
+        if ($this->dispatcher) {
+            try {
+                $result = $this->dispatcher->cancel($batch_id);
+                $cancelled += (int) $result['cancelled_rows'];
+            } catch (\Throwable $e) {
+                $this->logger->error('Batch cancel dispatcher failed', ['msg' => $e->getMessage()]);
+            }
+        }
         return $cancelled;
     }
 
@@ -298,16 +375,43 @@ class BulkRunner
     {
         global $wpdb;
 
-        // Queue-level lifecycle (worker state).
+        // Queue-level lifecycle (worker state). Batch-mode adds `submitted`
+        // (sent to OpenAI, awaiting completion), `ready` (response downloaded,
+        // waiting for local apply), and `applying` (apply in progress).
         $rows = $wpdb->get_results(
             $wpdb->prepare("SELECT status, COUNT(*) AS n FROM {$this->table()} WHERE batch_id = %s GROUP BY status", $batch_id),
             ARRAY_A
         ) ?: [];
-        $out = ['pending' => 0, 'running' => 0, 'completed' => 0, 'failed' => 0, 'cancelled' => 0];
+        $out = [
+            'pending'   => 0,
+            'submitted' => 0,
+            'ready'     => 0,
+            'applying'  => 0,
+            'running'   => 0,
+            'completed' => 0,
+            'failed'    => 0,
+            'cancelled' => 0,
+        ];
         foreach ($rows as $r) {
             $out[(string) $r['status']] = (int) $r['n'];
         }
         $out['total'] = array_sum($out);
+
+        // Detect dispatch + surface OpenAI batch status for the UI.
+        $dispatch = (string) $wpdb->get_var($wpdb->prepare(
+            "SELECT dispatch FROM {$this->table()} WHERE batch_id = %s LIMIT 1",
+            $batch_id
+        ));
+        $out['dispatch'] = $dispatch ?: 'sync';
+        if ($dispatch === 'batch') {
+            $batches_t = Schema::table('openai_batches');
+            $chunks = $wpdb->get_results($wpdb->prepare(
+                "SELECT status, openai_batch_id, completed_count, failed_count, request_count
+                   FROM {$batches_t} WHERE batch_id = %s ORDER BY chunk_index ASC",
+                $batch_id
+            ), ARRAY_A) ?: [];
+            $out['openai_chunks'] = $chunks;
+        }
 
         // Run-level outcomes — the real source of truth for "did anything get written?".
         // A queue row marked `completed` only means the worker didn't throw; it could
@@ -330,14 +434,14 @@ class BulkRunner
 
     /**
      * Bulk-insert pre-prepared row tuples. Each tuple must already be `prepare()`d
-     * with the column order (batch_id, post_id, template_id, fields_picked, mode, status, attempts, scheduled_for).
+     * with the column order (batch_id, post_id, template_id, fields_picked, mode, dispatch, status, attempts, scheduled_for).
      * @param array<int, string> $rows
      */
     private function insert_rows(array $rows): void
     {
         if (!$rows) return;
         global $wpdb;
-        $sql = "INSERT INTO {$this->table()} (batch_id, post_id, template_id, fields_picked, mode, status, attempts, scheduled_for) VALUES " . implode(',', $rows);
+        $sql = "INSERT INTO {$this->table()} (batch_id, post_id, template_id, fields_picked, mode, dispatch, status, attempts, scheduled_for) VALUES " . implode(',', $rows);
         $wpdb->query($sql);
     }
 }

@@ -39,7 +39,8 @@ $svc   = (string) ($settings['geo_service_area'] ?? '');
                 </div>
                 <div class="fl-field">
                     <label class="fl-field__label" for="seocp-rate"><?php esc_html_e('Requests per minute (per user)', 'seo-copilot'); ?></label>
-                    <input class="fl-input" type="number" min="1" max="600" id="seocp-rate" name="rate_per_min" value="<?php echo esc_attr((string) $rate); ?>" />
+                    <input class="fl-input" type="number" min="1" max="10000" id="seocp-rate" name="rate_per_min" value="<?php echo esc_attr((string) $rate); ?>" />
+                    <span class="fl-field__hint"><?php esc_html_e('Local throttle to stay under your OpenAI tier limit. Bulk Wizard\'s "OpenAI Batch" mode bypasses this entirely — use it for 500+ posts.', 'seo-copilot'); ?></span>
                 </div>
             </div>
             <?php

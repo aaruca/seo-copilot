@@ -6,7 +6,7 @@ class Schema
 {
     /** Internal schema version — independent of plugin version (which is pinned at 1.0.0).
      *  Bump this when you change CREATE TABLE strings so `maybe_upgrade()` runs dbDelta. */
-    public const DB_VERSION = '1.1.0';
+    public const DB_VERSION = '1.2.0';
 
     public static function install(): void
     {
@@ -85,15 +85,49 @@ class Schema
             template_id BIGINT UNSIGNED NOT NULL,
             fields_picked LONGTEXT NULL,
             mode VARCHAR(20) NOT NULL DEFAULT 'apply',
+            dispatch VARCHAR(10) NOT NULL DEFAULT 'sync',
             status VARCHAR(20) NOT NULL DEFAULT 'pending',
             attempts TINYINT UNSIGNED NOT NULL DEFAULT 0,
             scheduled_for DATETIME NOT NULL,
             started_at DATETIME NULL,
             completed_at DATETIME NULL,
             error_message TEXT NULL,
+            openai_custom_id VARCHAR(80) NULL,
+            payload_response LONGTEXT NULL,
             PRIMARY KEY (id),
             KEY batch_id (batch_id),
-            KEY status_scheduled (status, scheduled_for)
+            KEY status_scheduled (status, scheduled_for),
+            KEY dispatch_status (dispatch, status)
+        ) {$charset};";
+
+        // OpenAI Batch API submissions. One row per OpenAI batch (a user's
+        // internal batch_id may produce several rows when it exceeds the
+        // per-batch chunk size). Drives the build → submit → poll → apply
+        // lifecycle in BatchDispatcher.
+        $sql[] = "CREATE TABLE {$p}openai_batches (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            batch_id VARCHAR(40) NOT NULL,
+            chunk_index INT UNSIGNED NOT NULL DEFAULT 0,
+            status VARCHAR(30) NOT NULL DEFAULT 'draft',
+            openai_batch_id VARCHAR(80) NULL,
+            input_file_id VARCHAR(80) NULL,
+            output_file_id VARCHAR(80) NULL,
+            error_file_id VARCHAR(80) NULL,
+            model VARCHAR(60) NULL,
+            queue_id_min BIGINT UNSIGNED NULL,
+            queue_id_max BIGINT UNSIGNED NULL,
+            request_count INT UNSIGNED NOT NULL DEFAULT 0,
+            completed_count INT UNSIGNED NOT NULL DEFAULT 0,
+            failed_count INT UNSIGNED NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL,
+            submitted_at DATETIME NULL,
+            last_polled_at DATETIME NULL,
+            completed_at DATETIME NULL,
+            error_message TEXT NULL,
+            PRIMARY KEY (id),
+            KEY batch_id (batch_id),
+            KEY status (status),
+            KEY openai_batch_id (openai_batch_id)
         ) {$charset};";
 
         $sql[] = "CREATE TABLE {$p}options_long (

@@ -1,6 +1,6 @@
 # SEO Copilot
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Version](https://img.shields.io/badge/version-1.1.0-blue)
 ![PHP](https://img.shields.io/badge/php-%3E%3D7.4-8892BF)
 ![WordPress](https://img.shields.io/badge/wordpress-%3E%3D6.2-21759B)
 ![License](https://img.shields.io/badge/license-GPL--2.0--or--later-green)
@@ -14,7 +14,7 @@ AI-powered SEO content for any WordPress post type. Per-field, per-template cont
 - **Any post type** — pages, posts, WooCommerce products, custom post types.
 - **Per-field control** — pick exactly which fields the AI is allowed to write per post type and per template. A run can never overwrite content you want to keep.
 - **Smart Optimizer** — single-post wizard with Google SERP preview, character-budget counters, and side-by-side diff of current vs. proposed values.
-- **Bulk Wizard** — paginated post picker with "Select all matching" for large catalogs, per-batch cost estimate, and background processing via WP-Cron.
+- **Bulk Wizard** — paginated post picker with "Select all matching" for large catalogs, per-batch cost estimate, and background processing via WP-Cron. Supports the **OpenAI Batch API** for 50%-cheaper, no-rate-limit submissions on 500+ post jobs.
 - **Templates** — reusable prompt blueprints with field-level toggles. Create, edit, delete, or restore defaults.
 - **Pending Review** — review AI proposals before applying them.
 - **Multi-keyword** — generates 3–5 focus keywords per field, split correctly for Rank Math / Yoast / SEOPress / AIOSEO.
@@ -95,6 +95,10 @@ All endpoints are under the `seocp/v1` namespace and require `manage_options` ca
 | `GET` | `/segments` | List segments for a run |
 
 ## Changelog
+
+### v1.1.0
+* **OpenAI Batch API dispatch** in the Bulk Wizard — 50% cheaper, no rate-limit ceiling, async (results return within 24h). Recommended for 500+ post jobs. Pick it in Step 4 → Processing mode.
+* Raised the per-minute rate-limit cap from 600 to 10,000 for users on higher OpenAI tiers.
 
 ### v1.0.0
 * Initial release.
