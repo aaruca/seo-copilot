@@ -66,6 +66,20 @@ class OpenAIBatchRepository
         return $rows ?: [];
     }
 
+    /**
+     * Count chunks that currently occupy OpenAI batch-queue capacity. Includes
+     * `building` (we're mid-upload) so the concurrency gate doesn't let a second
+     * submission race in while the first is still uploading.
+     */
+    public function count_in_flight(): int
+    {
+        global $wpdb;
+        return (int) $wpdb->get_var(
+            "SELECT COUNT(*) FROM {$this->table()}
+              WHERE status IN ('building','submitted','validating','in_progress','finalizing')"
+        );
+    }
+
     public function find(int $id): ?array
     {
         global $wpdb;

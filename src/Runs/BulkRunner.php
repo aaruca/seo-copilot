@@ -406,7 +406,7 @@ class BulkRunner
         if ($dispatch === 'batch') {
             $batches_t = Schema::table('openai_batches');
             $chunks = $wpdb->get_results($wpdb->prepare(
-                "SELECT status, openai_batch_id, completed_count, failed_count, request_count
+                "SELECT status, openai_batch_id, completed_count, failed_count, request_count, attempts, error_message
                    FROM {$batches_t} WHERE batch_id = %s ORDER BY chunk_index ASC",
                 $batch_id
             ), ARRAY_A) ?: [];

@@ -5,6 +5,17 @@ All notable changes to **SEO Copilot** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **OpenAI Batch mode no longer fails most chunks on large catalogs.** Previously every chunk was submitted near-simultaneously (cron + browser poll), blowing past OpenAI's per-model *enqueued-token* limit so all but the first chunk failed `0/N`. Submissions are now serialized behind a concurrency gate (`seocp_openai_batch_concurrency`, default 1): a new chunk is only submitted once earlier chunks free up batch-queue capacity.
+- **Transient batch failures are retried instead of permanently killing a whole chunk.** Token/rate-limit failures and 24h expiries reset the chunk to `draft` and re-enqueue its rows (up to `seocp_openai_batch_max_retries`, default 5). Validation errors in our own request file are still failed fast.
+- Partially-completed batches now also ingest OpenAI's **error file** and resolve any items missing from both files, so a batch can't hang below 100% forever.
+- Bulk Wizard chunk pills now show a `retry N` state and surface the OpenAI failure reason on hover.
+
+### Changed
+- `seocp_openai_batches` gained an `attempts` column (Schema v1.3.0, auto-upgraded on plugin load).
+
 ## [1.1.0] — 2026-06-03
 
 ### Added
