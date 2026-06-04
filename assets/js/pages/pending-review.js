@@ -238,35 +238,65 @@
             });
     }
 
+    /**
+     * Drain one batch by repeatedly POSTing segments/apply until the server
+     * reports `remaining === 0` (or a chunk makes no progress). The server
+     * caps each call at ~500 segments, so a 150k-segment batch needs many
+     * round-trips — this loop handles them so one click really does apply all.
+     */
+    function drainBatch(batch_id, acc, onProgress) {
+        return rest.post('segments/apply', { batch_id: batch_id }).then(function (r) {
+            acc.applied += r.applied || 0;
+            acc.skipped += r.skipped || 0;
+            if (onProgress) onProgress(acc, r.remaining);
+            var madeProgress = (r.applied || 0) > 0 || (r.skipped || 0) > 0;
+            var remaining = (typeof r.remaining === 'number') ? r.remaining : 0;
+            if (remaining > 0 && madeProgress) {
+                return drainBatch(batch_id, acc, onProgress); // keep draining
+            }
+            return acc;
+        });
+    }
+
     function applyEntireBatch() {
-        if (!confirm('Apply EVERY pending proposal' + (state.batch_id ? ' in this batch' : '') + '?\n\nThis writes to all matching posts at once. Cannot be undone.')) return;
-        var payload = state.batch_id ? { batch_id: state.batch_id } : { batch_id: '' };
-        if (!state.batch_id) {
-            // For "all batches", we still need to gather everything pending.
-            // The server's apply endpoint requires items OR batch_id, so iterate batches.
-            return rest.get('segments/pending-batches').then(function (data) {
+        if (!confirm('Apply EVERY pending proposal' + (state.batch_id ? ' in this batch' : ' across all batches') + '?\n\nThis writes to all matching posts. Large batches are applied in chunks and may take a minute. Cannot be undone.')) return;
+
+        var btn = $('seocp-review-apply-batch');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="fl-spinner" style="margin-right:6px;"></span>Applying…';
+        var acc = { applied: 0, skipped: 0 };
+        var onProgress = function (a, remaining) {
+            showStatus('info', 'Applying… ' + fmtNumber(a.applied) + ' written so far' +
+                (typeof remaining === 'number' ? ' • ' + fmtNumber(remaining) + ' remaining' : ''));
+        };
+
+        var work;
+        if (state.batch_id) {
+            work = drainBatch(state.batch_id, acc, onProgress);
+        } else {
+            // All batches — drain each in turn.
+            work = rest.get('segments/pending-batches').then(function (data) {
                 var batches = (data && data.batches) || [];
-                if (!batches.length) { toast('Nothing pending.', 'warning'); return; }
-                var p = Promise.resolve({ applied: 0, skipped: 0 });
+                if (!batches.length) { return acc; }
+                var p = Promise.resolve(acc);
                 batches.forEach(function (b) {
-                    p = p.then(function (acc) {
-                        return rest.post('segments/apply', { batch_id: b.batch_id }).then(function (r) {
-                            return { applied: acc.applied + (r.applied || 0), skipped: acc.skipped + (r.skipped || 0) };
-                        });
-                    });
+                    p = p.then(function () { return drainBatch(b.batch_id, acc, onProgress); });
                 });
-                return p.then(function (acc) {
-                    showStatus('success', '✓ Applied ' + acc.applied + ' field(s) across all batches.');
-                    load();
-                });
-            }).catch(function (e) { showStatus('danger', e.message); });
+                return p;
+            });
         }
-        rest.post('segments/apply', payload)
-            .then(function (r) {
-                showStatus('success', '✓ Applied ' + r.applied + ' field(s)' + (r.skipped > 0 ? ' (' + r.skipped + ' skipped)' : '') + '.');
-                load();
-            })
-            .catch(function (e) { showStatus('danger', e.message); });
+
+        work.then(function (a) {
+            btn.disabled = false;
+            btn.textContent = 'Apply entire batch';
+            showStatus('success', '✓ Applied ' + fmtNumber(a.applied) + ' field(s)' +
+                (a.skipped > 0 ? ' (' + fmtNumber(a.skipped) + ' skipped — couldn\'t be written)' : '') + '.');
+            load();
+        }).catch(function (e) {
+            btn.disabled = false;
+            btn.textContent = 'Apply entire batch';
+            showStatus('danger', e.message);
+        });
     }
 
     function rejectEntireBatch() {
