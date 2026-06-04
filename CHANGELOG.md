@@ -5,6 +5,12 @@ All notable changes to **SEO Copilot** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2] — 2026-06-04
+
+### Fixed
+- **Bulk apply now verifies each write actually persisted instead of trusting `update_post_meta()`'s return value.** On large catalogs with a persistent object cache (Redis/Memcached), a DB read-replica, or a plugin that filters postmeta, `update_post_meta()` can return success while the value never becomes visible — so the Logs showed `applied` but the product stayed empty. `apply()` now flushes the post cache, re-reads each field from the database, counts only verified writes (so a silent failure shows as `noop`, not a false `applied`), and logs the exact field/post that failed with a diagnostic hint. The cache flush also fixes the case where the write *did* persist but a stale cache was hiding it from the editor/front-end.
+- New filter `seocp_verify_writes` (default `true`) to disable the read-back if needed.
+
 ## [1.1.1] — 2026-06-04
 
 ### Fixed

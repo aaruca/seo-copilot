@@ -4,7 +4,7 @@ Tags: seo, ai, openai, content, woocommerce, bricks
 Requires at least: 6.2
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.1.1
+Stable tag: 1.1.2
 License: GPLv2 or later
 
 AI-powered SEO content for any post type. Per-field, per-template control. Fluent 2 UI.
@@ -19,6 +19,9 @@ SEO Copilot generates SEO titles, meta descriptions, focus keywords, image alt t
 * OpenAI (gpt-4.1 / gpt-4o family) via JSON mode.
 
 == Changelog ==
+
+= 1.1.2 =
+* Fixed: bulk apply now verifies each write actually persisted to the database instead of trusting update_post_meta()'s return value. On sites with a persistent object cache, a DB read-replica, or a postmeta-filtering plugin, writes could report success while the product stayed empty. Apply now flushes the post cache, re-reads each field, counts only verified writes, and logs any silent failures.
 
 = 1.1.1 =
 * Fixed: "Missing focus keyword" / "Missing meta description" presets returned the entire catalog on single-plugin sites — they now filter against only the active SEO plugin's keys (AND across them, with empty checks). Re-runs no longer burn tokens on already-optimized products.

@@ -116,6 +116,7 @@ class Runner
         $this->enforce_product_name_in_keywords($post_id, $values);
 
         $written = [];
+        $attempted = [];
         foreach ($allowed_ids as $fid) {
             $field = $this->fields->get($fid);
             if (!$field || !$field->applies_to($post_type)) {
@@ -129,7 +130,42 @@ class Runner
                 $value = function_exists('mb_substr') ? mb_substr($value, 0, $field->max_length) : substr($value, 0, $field->max_length);
             }
             if ($field->write($post_id, $value)) {
-                $written[] = $fid;
+                $attempted[$fid] = $value;
+            }
+        }
+
+        // Verify the writes actually persisted. update_post_meta() returns a
+        // truthy value even in environments where a persistent object cache,
+        // a DB read-replica, or another plugin's hook later drops the write —
+        // which is exactly the "Logs say applied but the product shows nothing"
+        // symptom on large bulk runs. We flush this post's caches and re-read
+        // each field from the database; only verified writes count as written,
+        // and a silent failure is logged loudly instead of reported as success.
+        if ($attempted) {
+            $verify = (bool) apply_filters('seocp_verify_writes', true);
+            if ($verify) {
+                if (function_exists('clean_post_cache')) {
+                    clean_post_cache($post_id);
+                }
+                wp_cache_delete($post_id, 'post_meta');
+                foreach ($attempted as $fid => $value) {
+                    $field = $this->fields->get($fid);
+                    $back  = $field ? $field->read($post_id) : '';
+                    // A field we wrote non-empty that reads back empty did not
+                    // persist. Intentionally-empty writes are fine.
+                    if ($value === '' || trim((string) $back) !== '') {
+                        $written[] = $fid;
+                    } else {
+                        $this->logger->error('SEO Copilot write did not persist', [
+                            'post_id'   => $post_id,
+                            'field'     => $fid,
+                            'wrote_len' => function_exists('mb_strlen') ? mb_strlen($value) : strlen($value),
+                            'hint'      => 'update_post_meta returned success but the value is empty on read-back — check for a persistent object cache, DB read-replica lag, or a plugin filtering postmeta.',
+                        ]);
+                    }
+                }
+            } else {
+                $written = array_keys($attempted);
             }
         }
 

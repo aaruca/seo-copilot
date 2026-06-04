@@ -1,6 +1,6 @@
 # SEO Copilot
 
-![Version](https://img.shields.io/badge/version-1.1.1-blue)
+![Version](https://img.shields.io/badge/version-1.1.2-blue)
 ![PHP](https://img.shields.io/badge/php-%3E%3D7.4-8892BF)
 ![WordPress](https://img.shields.io/badge/wordpress-%3E%3D6.2-21759B)
 ![License](https://img.shields.io/badge/license-GPL--2.0--or--later-green)
@@ -95,6 +95,9 @@ All endpoints are under the `seocp/v1` namespace and require `manage_options` ca
 | `GET` | `/segments` | List segments for a run |
 
 ## Changelog
+
+### v1.1.2
+* Fixed: bulk apply trusted `update_post_meta()`'s return value, so on sites with a persistent object cache / DB read-replica / postmeta-filtering plugin it logged `applied` while the product stayed empty. Apply now re-reads each write from the database, flushes the post cache, counts only verified writes, and logs any that silently failed.
 
 ### v1.1.1
 * Fixed: "Missing focus keyword" / "Missing meta description" presets returned the whole catalog on single-plugin sites (relation=OR across always-absent keys). Both presets now AND across only the **active** SEO plugin's keys.
