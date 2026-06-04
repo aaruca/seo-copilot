@@ -6,7 +6,7 @@ class Schema
 {
     /** Internal schema version — independent of plugin version (which is pinned at 1.0.0).
      *  Bump this when you change CREATE TABLE strings so `maybe_upgrade()` runs dbDelta. */
-    public const DB_VERSION = '1.3.0';
+    public const DB_VERSION = '1.4.0';
 
     public static function install(): void
     {
@@ -94,6 +94,7 @@ class Schema
             error_message TEXT NULL,
             openai_custom_id VARCHAR(80) NULL,
             payload_response LONGTEXT NULL,
+            created_by BIGINT UNSIGNED NOT NULL DEFAULT 0,
             PRIMARY KEY (id),
             KEY batch_id (batch_id),
             KEY status_scheduled (status, scheduled_for),
