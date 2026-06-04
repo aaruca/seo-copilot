@@ -6,7 +6,7 @@ class Schema
 {
     /** Internal schema version — independent of plugin version (which is pinned at 1.0.0).
      *  Bump this when you change CREATE TABLE strings so `maybe_upgrade()` runs dbDelta. */
-    public const DB_VERSION = '1.2.0';
+    public const DB_VERSION = '1.3.0';
 
     public static function install(): void
     {
@@ -119,6 +119,7 @@ class Schema
             request_count INT UNSIGNED NOT NULL DEFAULT 0,
             completed_count INT UNSIGNED NOT NULL DEFAULT 0,
             failed_count INT UNSIGNED NOT NULL DEFAULT 0,
+            attempts TINYINT UNSIGNED NOT NULL DEFAULT 0,
             created_at DATETIME NOT NULL,
             submitted_at DATETIME NULL,
             last_polled_at DATETIME NULL,

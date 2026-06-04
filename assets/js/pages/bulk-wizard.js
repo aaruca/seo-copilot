@@ -349,12 +349,17 @@
         if (!chunks || !chunks.length) return '';
         var pills = chunks.map(function (c) {
             var s = (c.status || '').toLowerCase();
+            var attempts = c.attempts || 0;
             var kind = 'fl-badge';
+            var label = s;
             if (s === 'completed') kind = 'fl-badge fl-badge--success';
             else if (s === 'failed' || s === 'expired' || s === 'cancelled') kind = 'fl-badge fl-badge--danger';
-            else if (s === 'in_progress' || s === 'finalizing' || s === 'validating' || s === 'submitted') kind = 'fl-badge fl-badge--info';
+            else if (s === 'draft' && attempts > 0) { kind = 'fl-badge fl-badge--warning'; label = 'retry ' + attempts; }
+            else if (s === 'in_progress' || s === 'finalizing' || s === 'validating' || s === 'submitted' || s === 'building') kind = 'fl-badge fl-badge--info';
             var n = (c.completed_count || 0) + '/' + (c.request_count || 0);
-            return '<span class="' + kind + '" title="' + esc(c.openai_batch_id || '') + '">' + esc(s) + ' ' + n + '</span>';
+            // Surface the OpenAI failure reason on hover so a stuck batch is diagnosable.
+            var tip = c.error_message ? c.error_message : (c.openai_batch_id || '');
+            return '<span class="' + kind + '" title="' + esc(tip) + '">' + esc(label) + ' ' + n + '</span>';
         }).join(' ');
         return '<div class="fl-row" style="flex-wrap:wrap;margin-top:8px;gap:6px;">' +
             '<span class="fl-muted fl-text-200">OpenAI chunks:</span> ' + pills + '</div>';

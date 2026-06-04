@@ -112,31 +112,77 @@ class PostsController extends Controller
         ];
 
         if ($preset === 'missing_meta') {
-            $args['meta_query'] = [
-                'relation' => 'AND',
-                ['relation' => 'OR',
-                    ['key' => '_yoast_wpseo_metadesc', 'compare' => 'NOT EXISTS'],
-                    ['key' => '_yoast_wpseo_metadesc', 'value' => '', 'compare' => '='],
-                ],
-                ['relation' => 'OR',
-                    ['key' => 'rank_math_description', 'compare' => 'NOT EXISTS'],
-                    ['key' => 'rank_math_description', 'value' => '', 'compare' => '='],
-                ],
-                ['relation' => 'OR',
-                    ['key' => '_aioseo_description', 'compare' => 'NOT EXISTS'],
-                    ['key' => '_aioseo_description', 'value' => '', 'compare' => '='],
-                ],
-            ];
+            $mq = self::missing_query(self::active_desc_keys());
+            if ($mq) {
+                $args['meta_query'] = $mq;
+            }
         } elseif ($preset === 'missing_focus') {
-            $args['meta_query'] = [
-                'relation' => 'OR',
-                ['key' => 'rank_math_focus_keyword', 'compare' => 'NOT EXISTS'],
-                ['key' => '_yoast_wpseo_focuskw',   'compare' => 'NOT EXISTS'],
-                ['key' => '_aioseo_keyphrases',     'compare' => 'NOT EXISTS'],
-            ];
+            $mq = self::missing_query(self::active_focus_keys());
+            if ($mq) {
+                $args['meta_query'] = $mq;
+            }
         }
 
         return $args;
+    }
+
+    /**
+     * Build a "missing across every listed key" meta_query: a post matches only
+     * when the field is absent OR empty for ALL of the given keys.
+     *
+     * Relation is AND (not OR). Using OR was the bug — when only one SEO plugin
+     * is installed, the other plugins' keys never exist, so "missing in plugin
+     * X OR plugin Y" matched every post. With AND, an inactive plugin's key
+     * (always absent) is trivially satisfied, so the condition reduces to the
+     * active plugin(s) — which is what we want.
+     *
+     * @param array<int,string> $keys
+     * @return array<string,mixed>
+     */
+    private static function missing_query(array $keys): array
+    {
+        if (!$keys) {
+            return [];
+        }
+        $mq = ['relation' => 'AND'];
+        foreach ($keys as $key) {
+            $mq[] = [
+                'relation' => 'OR',
+                ['key' => $key, 'compare' => 'NOT EXISTS'],
+                ['key' => $key, 'value' => '', 'compare' => '='],
+            ];
+        }
+        return $mq;
+    }
+
+    /**
+     * Meta-description keys for the SEO plugins that are actually active. Keeps
+     * the JOIN count down on large catalogs and avoids the inactive-plugin
+     * false-positive. Falls back to all known keys if none is detected.
+     *
+     * @return array<int,string>
+     */
+    private static function active_desc_keys(): array
+    {
+        $keys = [];
+        if (defined('RANK_MATH_VERSION') || class_exists('RankMath'))   $keys[] = 'rank_math_description';
+        if (defined('WPSEO_VERSION') || class_exists('WPSEO_Options'))  $keys[] = '_yoast_wpseo_metadesc';
+        if (defined('AIOSEO_VERSION') || function_exists('aioseo'))     $keys[] = '_aioseo_description';
+        return $keys ?: ['rank_math_description', '_yoast_wpseo_metadesc', '_aioseo_description'];
+    }
+
+    /**
+     * Focus-keyword keys for the active SEO plugins. @see active_desc_keys().
+     *
+     * @return array<int,string>
+     */
+    private static function active_focus_keys(): array
+    {
+        $keys = [];
+        if (defined('RANK_MATH_VERSION') || class_exists('RankMath'))   $keys[] = 'rank_math_focus_keyword';
+        if (defined('WPSEO_VERSION') || class_exists('WPSEO_Options'))  $keys[] = '_yoast_wpseo_focuskw';
+        if (defined('AIOSEO_VERSION') || function_exists('aioseo'))     $keys[] = '_aioseo_keyphrases';
+        return $keys ?: ['rank_math_focus_keyword', '_yoast_wpseo_focuskw', '_aioseo_keyphrases'];
     }
 
     /** Quick read of current SEO meta for the picker UI. */

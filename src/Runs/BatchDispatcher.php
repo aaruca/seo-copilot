@@ -32,6 +32,19 @@ class BatchDispatcher
     /** OpenAI Batch pricing is 50% off the synchronous list price. */
     private const BATCH_PRICE_MULTIPLIER = 0.5;
 
+    /** How many OpenAI batches we allow in flight at once. OpenAI enforces a
+     *  per-model *enqueued-token* limit across all your in-progress batches;
+     *  firing every chunk at once blows past it and the surplus batches fail
+     *  wholesale. Serializing (1 at a time) keeps the enqueued total to a
+     *  single chunk's worth, which is the safe default. Raise it via
+     *  `seocp_openai_batch_concurrency` only if your org's batch limit is high. */
+    public const DEFAULT_CONCURRENCY = 1;
+
+    /** Max times a chunk is re-submitted after a *transient* failure (token /
+     *  rate limit, or expiry) before we give up and fail its rows for good.
+     *  Filterable via `seocp_openai_batch_max_retries`. */
+    public const DEFAULT_MAX_RETRIES = 5;
+
     private OpenAIBatchClient $client;
     private PromptAssembler $assembler;
     private TemplateRepository $templates;
@@ -62,6 +75,18 @@ class BatchDispatcher
     {
         $size = (int) apply_filters('seocp_openai_batch_chunk_size', self::DEFAULT_CHUNK_SIZE);
         return max(1, min(50000, $size));
+    }
+
+    public static function concurrency(): int
+    {
+        $n = (int) apply_filters('seocp_openai_batch_concurrency', self::DEFAULT_CONCURRENCY);
+        return max(1, $n);
+    }
+
+    public static function max_retries(): int
+    {
+        $n = (int) apply_filters('seocp_openai_batch_max_retries', self::DEFAULT_MAX_RETRIES);
+        return max(0, $n);
     }
 
     /**
@@ -139,6 +164,15 @@ class BatchDispatcher
      */
     public function submit_next_draft(): bool
     {
+        // Concurrency gate. OpenAI caps the *enqueued tokens* across all your
+        // in-progress batches per model; submitting every chunk at once exceeds
+        // it and the surplus batches fail wholesale. Only submit a new chunk
+        // when we're below the concurrency budget — the rest wait as drafts and
+        // get picked up as earlier chunks finish.
+        if ($this->batches->count_in_flight() >= self::concurrency()) {
+            return false;
+        }
+
         $draft = $this->batches->next_draft();
         if (!$draft) {
             return false;
@@ -180,15 +214,18 @@ class BatchDispatcher
             @unlink($path);
             return true;
         } catch (\Throwable $e) {
-            $this->batches->update($row_id, [
-                'status'        => 'failed',
-                'error_message' => $e->getMessage(),
-                'completed_at'  => current_time('mysql'),
-            ]);
-            $this->logger->error('Batch submit failed', [
-                'id'  => $row_id,
-                'msg' => $e->getMessage(),
-            ]);
+            // Queue rows in this range are still 'pending' (mark_queue_submitted
+            // runs only on success), so a retry just resets the chunk to 'draft'.
+            $this->handle_chunk_failure(
+                $row_id,
+                (string) $draft['batch_id'],
+                (int) $draft['queue_id_min'],
+                (int) $draft['queue_id_max'],
+                (int) $draft['attempts'],
+                $e->getMessage(),
+                'validating', // a thrown create/upload error has no remote status
+                false         // queue rows are still pending — nothing to reset
+            );
             return false;
         }
     }
@@ -228,7 +265,35 @@ class BatchDispatcher
                     $update['completed_at'] = current_time('mysql');
                     $this->batches->update($row_id, $update);
                     $this->ingest_output((string) $row['batch_id'], (string) $remote['output_file_id'], (int) $row['queue_id_min'], (int) $row['queue_id_max']);
-                } elseif (in_array($status, ['failed', 'expired', 'cancelled'], true)) {
+                    // Individually-errored requests land in a separate error file.
+                    if (!empty($remote['error_file_id'])) {
+                        $this->ingest_errors((string) $row['batch_id'], (string) $remote['error_file_id']);
+                    }
+                    // Any row still 'submitted' wasn't in either file — resolve it
+                    // so the batch can't hang at < 100% forever.
+                    $this->fail_unresolved((string) $row['batch_id'], (int) $row['queue_id_min'], (int) $row['queue_id_max'], 'No response returned for this item by the OpenAI batch.');
+                } elseif (in_array($status, ['failed', 'expired'], true)) {
+                    // Transient failures (token / rate limit, expiry) are retried
+                    // so a momentary capacity crunch doesn't permanently kill a
+                    // whole chunk. `cancelled` is a deliberate user action — see
+                    // the next branch — and is never retried.
+                    $msg = (string) ($remote['errors']['data'][0]['message'] ?? $status);
+                    $this->batches->update($row_id, [
+                        'last_polled_at'  => current_time('mysql'),
+                        'completed_count' => (int) ($counts['completed'] ?? 0),
+                        'failed_count'    => (int) ($counts['failed'] ?? 0),
+                    ]);
+                    $this->handle_chunk_failure(
+                        $row_id,
+                        (string) $row['batch_id'],
+                        (int) $row['queue_id_min'],
+                        (int) $row['queue_id_max'],
+                        (int) ($row['attempts'] ?? 0),
+                        $msg,
+                        $status,
+                        true // these rows were marked 'submitted' — reset them to pending on retry
+                    );
+                } elseif ($status === 'cancelled') {
                     $update['completed_at'] = current_time('mysql');
                     $update['error_message'] = (string) ($remote['errors']['data'][0]['message'] ?? $status);
                     $this->batches->update($row_id, $update);
@@ -422,6 +487,99 @@ class BatchDispatcher
     }
 
     /**
+     * Roll a chunk's queue rows back to 'pending' so a re-submitted chunk
+     * re-enqueues them. Only touches rows that were 'submitted' (sent to the
+     * failed batch) — never rows already 'ready'/'completed'.
+     */
+    private function reset_queue_to_pending(string $batch_id, int $queue_id_min, int $queue_id_max): void
+    {
+        global $wpdb;
+        $queue = Schema::table('queue');
+        $wpdb->query($wpdb->prepare(
+            "UPDATE {$queue}
+                SET status = 'pending', started_at = NULL, openai_custom_id = NULL
+              WHERE batch_id = %s AND dispatch = 'batch'
+                AND id BETWEEN %d AND %d
+                AND status = 'submitted'",
+            $batch_id, $queue_id_min, $queue_id_max
+        ));
+    }
+
+    /**
+     * Decide whether a failed chunk should be retried or failed for good.
+     *
+     * Retryable causes (token/rate-limit, expiry) reset the chunk to 'draft' so
+     * the concurrency-gated submitter picks it up again once capacity frees.
+     * Anything else — or a chunk that's out of retries — is failed permanently
+     * and its queue rows are marked failed.
+     *
+     * @param bool $rows_submitted Whether the queue rows were already moved to
+     *                             'submitted' (poll path) vs still 'pending'
+     *                             (submit-catch path).
+     */
+    private function handle_chunk_failure(
+        int $row_id,
+        string $batch_id,
+        int $queue_id_min,
+        int $queue_id_max,
+        int $attempts,
+        string $msg,
+        string $status,
+        bool $rows_submitted
+    ): void {
+        $retryable = $this->is_retryable_failure($msg, $status);
+        if ($retryable && $attempts < self::max_retries()) {
+            // Re-queue the chunk. Reset to draft, bump attempts, clear the stale
+            // OpenAI handles so it builds a fresh input file next time.
+            if ($rows_submitted) {
+                $this->reset_queue_to_pending($batch_id, $queue_id_min, $queue_id_max);
+            }
+            $this->batches->update($row_id, [
+                'status'          => 'draft',
+                'attempts'        => $attempts + 1,
+                'openai_batch_id' => null,
+                'input_file_id'   => null,
+                'error_message'   => sprintf('Retry %d/%d after: %s', $attempts + 1, self::max_retries(), $msg),
+            ]);
+            $this->logger->info('Batch chunk re-queued after transient failure', [
+                'id' => $row_id, 'attempt' => $attempts + 1, 'msg' => $msg,
+            ]);
+            return;
+        }
+
+        // Permanent failure.
+        $this->batches->update($row_id, [
+            'status'        => 'failed',
+            'error_message' => $msg,
+            'completed_at'  => current_time('mysql'),
+        ]);
+        $this->fail_queue_range($batch_id, $queue_id_min, $queue_id_max, $msg);
+        $this->logger->error('Batch chunk failed permanently', [
+            'id' => $row_id, 'attempts' => $attempts, 'msg' => $msg,
+        ]);
+    }
+
+    /**
+     * Heuristic: is this batch failure worth retrying? Token/rate-limit
+     * pressure and expiry are transient; validation errors in our own JSONL
+     * are not (retrying would just fail the same way).
+     */
+    private function is_retryable_failure(string $msg, string $status): bool
+    {
+        if ($status === 'expired') {
+            return true;
+        }
+        $needles = ['enqueued', 'token limit', 'rate limit', 'rate_limit', 'too many requests', 'try again', 'temporarily', 'capacity', '429', '503'];
+        $hay = strtolower($msg);
+        foreach ($needles as $n) {
+            if (strpos($hay, $n) !== false) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Stream the output JSONL, write each response back to its queue row,
      * and flip the row to 'ready' for Phase C.
      */
@@ -461,6 +619,61 @@ class BatchDispatcher
                 'payload_response' => wp_json_encode($resp['body'] ?? []),
             ], ['id' => $queue_id]);
         }
+    }
+
+    /**
+     * Parse a batch error file (JSONL) and mark each referenced queue row
+     * failed with its error message.
+     */
+    private function ingest_errors(string $batch_id, string $error_file_id): void
+    {
+        global $wpdb;
+        $queue = Schema::table('queue');
+        try {
+            $raw = $this->client->get_file_content($error_file_id);
+        } catch (\Throwable $e) {
+            $this->logger->error('Batch error-file fetch failed', ['msg' => $e->getMessage()]);
+            return;
+        }
+        if ($raw === '') {
+            return;
+        }
+        $lines = preg_split("/\r?\n/", $raw) ?: [];
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if ($line === '') continue;
+            $decoded = json_decode($line, true);
+            if (!is_array($decoded) || empty($decoded['custom_id'])) continue;
+            $custom_id = (string) $decoded['custom_id'];
+            if (strncmp($custom_id, 'q-', 2) !== 0) continue;
+            $queue_id = (int) substr($custom_id, 2);
+            if ($queue_id <= 0) continue;
+            $err = $decoded['error'] ?? $decoded['response']['body']['error'] ?? null;
+            $msg = is_array($err) ? (string) ($err['message'] ?? 'batch error') : 'batch error';
+            $wpdb->update($queue, [
+                'status'        => 'failed',
+                'error_message' => $msg,
+                'completed_at'  => current_time('mysql'),
+            ], ['id' => $queue_id]);
+        }
+    }
+
+    /**
+     * Fail any rows in a completed chunk's range that are still 'submitted'
+     * (i.e. appeared in neither the output nor the error file).
+     */
+    private function fail_unresolved(string $batch_id, int $queue_id_min, int $queue_id_max, string $msg): void
+    {
+        global $wpdb;
+        $queue = Schema::table('queue');
+        $wpdb->query($wpdb->prepare(
+            "UPDATE {$queue}
+                SET status = 'failed', error_message = %s, completed_at = %s
+              WHERE batch_id = %s AND dispatch = 'batch'
+                AND id BETWEEN %d AND %d
+                AND status = 'submitted'",
+            $msg, current_time('mysql'), $batch_id, $queue_id_min, $queue_id_max
+        ));
     }
 
     private function apply_row(array $row): void

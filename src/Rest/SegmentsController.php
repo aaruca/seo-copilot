@@ -133,6 +133,12 @@ class SegmentsController extends Controller
         // Resolve segment rows + value overrides.
         $rows = [];
         $value_overrides = [];
+        // In batch-drain mode (caller loops until `remaining` is 0), a segment
+        // that can't be written — post-type guard, inactive plugin's field —
+        // would otherwise sit pending forever and stall the drain. Mark those
+        // rejected so the pending pool always shrinks. Manual items-mode keeps
+        // skipped segments pending so the user can retry.
+        $reject_unappliable = false;
         if ($items) {
             $ids = [];
             foreach ($items as $item) {
@@ -148,8 +154,12 @@ class SegmentsController extends Controller
             }
             $rows = $this->segments->fetch_many($ids);
         } elseif ($batch_id !== '') {
-            // Apply everything pending in the batch.
-            $rows = $this->segments->list_pending(5000, 0, $batch_id);
+            // Apply a chunk of what's pending in the batch. The caller drains the
+            // batch by polling until `remaining` hits 0 — one HTTP request can't
+            // safely write 150k segments, and list_pending caps at 500 anyway.
+            $chunk = (int) apply_filters('seocp_segments_apply_chunk', 500);
+            $rows  = $this->segments->list_pending(max(1, $chunk), 0, $batch_id);
+            $reject_unappliable = true;
         } else {
             return new \WP_REST_Response(['error' => 'no_items_or_batch_id'], 400);
         }
@@ -170,6 +180,9 @@ class SegmentsController extends Controller
         foreach ($by_post as $post_id => $segs) {
             if (!current_user_can('edit_post', $post_id)) {
                 $skipped_count += count($segs);
+                if ($reject_unappliable) {
+                    foreach ($segs as $r) { $this->segments->mark_rejected((int) $r['id']); }
+                }
                 continue;
             }
             $values = [];
@@ -196,19 +209,29 @@ class SegmentsController extends Controller
                         $this->segments->mark_applied($sid);
                         $applied_count++;
                     } else {
-                        // Field didn't apply (post-type mismatch, guard, etc.) — leave as pending.
+                        // Field didn't apply (post-type mismatch, guard, etc.).
                         $skipped_count++;
+                        if ($reject_unappliable) {
+                            $this->segments->mark_rejected($sid);
+                        }
                     }
                 }
             } catch (\Throwable $e) {
                 $skipped_count += count($segs);
+                if ($reject_unappliable) {
+                    foreach ($segment_ids_for_post as $sid) { $this->segments->mark_rejected($sid); }
+                }
             }
         }
 
+        // `remaining` lets the caller drain a large batch by polling until 0.
+        $remaining = $batch_id !== '' ? $this->segments->pending_count($batch_id) : null;
+
         return rest_ensure_response([
-            'ok'       => true,
-            'applied'  => $applied_count,
-            'skipped'  => $skipped_count,
+            'ok'        => true,
+            'applied'   => $applied_count,
+            'skipped'   => $skipped_count,
+            'remaining' => $remaining,
         ]);
     }
 
