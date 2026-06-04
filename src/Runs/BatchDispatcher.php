@@ -686,6 +686,11 @@ class BatchDispatcher
         $fields  = json_decode((string) $row['fields_picked'], true) ?: [];
         $mode    = ((string) ($row['mode'] ?? 'apply')) === 'review' ? 'review' : 'apply';
         $batch_id = (string) $row['batch_id'];
+        $created_by = (int) ($row['created_by'] ?? 0);
+
+        // Same fix as BulkRunner::process_row — restore the originating user
+        // so postmeta auth_callbacks accept writes when this runs from cron.
+        $restore_user = BulkRunner::switch_user_for_batch($created_by, $post_id);
 
         $wpdb->update($queue, [
             'status'     => 'applying',
@@ -735,6 +740,7 @@ class BatchDispatcher
                 'completed_at'  => current_time('mysql'),
             ], ['id' => $id]);
         }
+        $restore_user();
     }
 
     /**

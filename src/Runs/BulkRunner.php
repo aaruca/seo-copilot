@@ -61,12 +61,17 @@ class BulkRunner
         $batch_id = wp_generate_uuid4();
         $now = current_time('mysql');
         $fields_json = wp_json_encode(array_values($fields));
+        // Capture the user who created the batch. Bulk jobs are processed
+        // later from WP-Cron, which has no logged-in user — so postmeta
+        // auth_callbacks (Rank Math, Yoast) reject the write silently and the
+        // product stays empty. We restore this user during apply.
+        $created_by = (int) get_current_user_id();
 
         $rows = [];
         foreach ($post_ids as $pid) {
             $rows[] = $wpdb->prepare(
-                '(%s, %d, %d, %s, %s, %s, %s, %d, %s)',
-                $batch_id, (int) $pid, $template_id, $fields_json, $mode, $dispatch, 'pending', 0, $now
+                '(%s, %d, %d, %s, %s, %s, %s, %d, %s, %d)',
+                $batch_id, (int) $pid, $template_id, $fields_json, $mode, $dispatch, 'pending', 0, $now, $created_by
             );
             if (count($rows) >= self::INSERT_CHUNK) {
                 $this->insert_rows($rows);
@@ -99,6 +104,7 @@ class BulkRunner
         $batch_id = wp_generate_uuid4();
         $now = current_time('mysql');
         $fields_json = wp_json_encode(array_values($fields));
+        $created_by = (int) get_current_user_id();
 
         $cap = (int) apply_filters('seocp_bulk_max_matching', self::FILTER_MODE_HARD_CAP);
 
@@ -127,8 +133,8 @@ class BulkRunner
             foreach ($ids as $pid) {
                 if ($count >= $cap) { $truncated = true; break 2; }
                 $rows[] = $wpdb->prepare(
-                    '(%s, %d, %d, %s, %s, %s, %s, %d, %s)',
-                    $batch_id, (int) $pid, $template_id, $fields_json, $mode, $dispatch, 'pending', 0, $now
+                    '(%s, %d, %d, %s, %s, %s, %s, %d, %s, %d)',
+                    $batch_id, (int) $pid, $template_id, $fields_json, $mode, $dispatch, 'pending', 0, $now, $created_by
                 );
                 $count++;
                 if (count($rows) >= self::INSERT_CHUNK) {
@@ -255,6 +261,12 @@ class BulkRunner
         $mode      = self::normalize_mode((string) ($row['mode'] ?? 'apply'));
         $post_id   = (int) $row['post_id'];
         $tpl_id    = (int) $row['template_id'];
+        $created_by = (int) ($row['created_by'] ?? 0);
+        // Restore the originating user so postmeta auth_callbacks (Rank Math,
+        // Yoast) accept the write. In cron there's no current user, which is
+        // why bulk writes vanished while individual ones from the editor — run
+        // under the admin's REST request — worked fine.
+        $restore_user = self::switch_user_for_batch($created_by, $post_id);
         try {
             $proposal = $this->runner->generate($post_id, $tpl_id, $fields, $batch_id);
             if ($mode === 'review') {
@@ -282,6 +294,46 @@ class BulkRunner
             }
             $wpdb->update($this->table(), $update, ['id' => $id]);
         }
+        $restore_user();
+    }
+
+    /**
+     * Switch the current WordPress user to the one who created the batch so
+     * postmeta auth_callbacks accept writes during cron execution. Returns a
+     * closure that restores the previous user — call it after the apply.
+     *
+     * Falls back to any admin who can edit the target post, never to user 0.
+     */
+    public static function switch_user_for_batch(int $created_by, int $post_id): \Closure
+    {
+        $previous = (int) get_current_user_id();
+        $target   = 0;
+        if ($created_by > 0) {
+            $u = get_userdata($created_by);
+            if ($u && user_can($u, 'edit_post', $post_id)) {
+                $target = $created_by;
+            }
+        }
+        if ($target === 0) {
+            // Last-resort fallback: first admin who can edit this post. This
+            // keeps cron-run jobs working even after the originating user is
+            // deleted or loses capability.
+            $admins = get_users(['role' => 'administrator', 'number' => 5, 'fields' => ['ID']]);
+            foreach ($admins as $a) {
+                if (user_can((int) $a->ID, 'edit_post', $post_id)) {
+                    $target = (int) $a->ID;
+                    break;
+                }
+            }
+        }
+        if ($target > 0 && $target !== $previous) {
+            wp_set_current_user($target);
+        }
+        return static function () use ($previous, $target) {
+            if ($target > 0 && $target !== $previous) {
+                wp_set_current_user($previous);
+            }
+        };
     }
 
     /**
@@ -441,7 +493,7 @@ class BulkRunner
     {
         if (!$rows) return;
         global $wpdb;
-        $sql = "INSERT INTO {$this->table()} (batch_id, post_id, template_id, fields_picked, mode, dispatch, status, attempts, scheduled_for) VALUES " . implode(',', $rows);
+        $sql = "INSERT INTO {$this->table()} (batch_id, post_id, template_id, fields_picked, mode, dispatch, status, attempts, scheduled_for, created_by) VALUES " . implode(',', $rows);
         $wpdb->query($sql);
     }
 }

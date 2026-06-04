@@ -5,6 +5,12 @@ All notable changes to **SEO Copilot** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.3] — 2026-06-04
+
+### Fixed
+- **Bulk writes silently dropped under cron because there was no current user.** Individual writes from Smart Optimizer / Pending Review worked because they run inside an authenticated REST request, but bulk processing runs from WP-Cron with no logged-in user — so the `auth_callback` registered by Rank Math / Yoast on their meta keys rejected the write. `update_post_meta()` returned truthy, the Logs read `applied`, and the product stayed empty. The Bulk Runner and OpenAI Batch dispatcher now restore the originating user before each `apply()` call (with a safe fallback to any admin who can edit the post if the originating user was deleted).
+- Schema v1.4.0 adds `queue.created_by` (auto-upgraded on plugin load) so cron knows which user enqueued the batch.
+
 ## [1.1.2] — 2026-06-04
 
 ### Fixed

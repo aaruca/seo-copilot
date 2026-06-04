@@ -1,6 +1,6 @@
 # SEO Copilot
 
-![Version](https://img.shields.io/badge/version-1.1.2-blue)
+![Version](https://img.shields.io/badge/version-1.1.3-blue)
 ![PHP](https://img.shields.io/badge/php-%3E%3D7.4-8892BF)
 ![WordPress](https://img.shields.io/badge/wordpress-%3E%3D6.2-21759B)
 ![License](https://img.shields.io/badge/license-GPL--2.0--or--later-green)
@@ -95,6 +95,9 @@ All endpoints are under the `seocp/v1` namespace and require `manage_options` ca
 | `GET` | `/segments` | List segments for a run |
 
 ## Changelog
+
+### v1.1.3
+* Fixed: **bulk writes silently dropped under cron because no user was logged in** — Rank Math/Yoast's postmeta `auth_callback` rejected the write, so the Logs said `applied` but the product stayed empty. The cron worker and OpenAI Batch dispatcher now restore the user who created the batch before each apply.
 
 ### v1.1.2
 * Fixed: bulk apply trusted `update_post_meta()`'s return value, so on sites with a persistent object cache / DB read-replica / postmeta-filtering plugin it logged `applied` while the product stayed empty. Apply now re-reads each write from the database, flushes the post cache, counts only verified writes, and logs any that silently failed.
