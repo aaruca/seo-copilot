@@ -5,7 +5,7 @@ All notable changes to **SEO Copilot** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.1] — 2026-06-04
 
 ### Fixed
 - **"Apply entire batch" in Pending Review now applies the whole batch.** It was capped at ~500 segments per click (`list_pending` limit), so large review batches needed hundreds of clicks. The button now drains the batch in chunks until nothing is pending, with live progress, and auto-resolves segments that can't be written so the loop always terminates.
@@ -48,5 +48,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **REST API** — full `seocp/v1` namespace for all operations.
 - **Logging and diagnostics** — run history, per-segment audit trail, WP-Cron diagnostics.
 
+[1.1.1]: https://github.com/aaruca/seo-copilot/releases/tag/v1.1.1
 [1.1.0]: https://github.com/aaruca/seo-copilot/releases/tag/v1.1.0
 [1.0.0]: https://github.com/aaruca/seo-copilot/releases/tag/v1.0.0

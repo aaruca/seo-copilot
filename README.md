@@ -1,6 +1,6 @@
 # SEO Copilot
 
-![Version](https://img.shields.io/badge/version-1.1.0-blue)
+![Version](https://img.shields.io/badge/version-1.1.1-blue)
 ![PHP](https://img.shields.io/badge/php-%3E%3D7.4-8892BF)
 ![WordPress](https://img.shields.io/badge/wordpress-%3E%3D6.2-21759B)
 ![License](https://img.shields.io/badge/license-GPL--2.0--or--later-green)
@@ -95,6 +95,11 @@ All endpoints are under the `seocp/v1` namespace and require `manage_options` ca
 | `GET` | `/segments` | List segments for a run |
 
 ## Changelog
+
+### v1.1.1
+* Fixed: "Missing focus keyword" / "Missing meta description" presets returned the whole catalog on single-plugin sites (relation=OR across always-absent keys). Both presets now AND across only the **active** SEO plugin's keys.
+* Fixed: OpenAI Batch mode failed most chunks on large catalogs because submissions weren't gated — every chunk fired at once, exceeding OpenAI's per-model enqueued-token limit. Submissions are now serialized; transient failures retry; OpenAI's error file is ingested on partial completions.
+* Fixed: "Apply entire batch" in Pending Review now drains the entire batch in chunks instead of stopping at ~500 segments per click.
 
 ### v1.1.0
 * **OpenAI Batch API dispatch** in the Bulk Wizard — 50% cheaper, no rate-limit ceiling, async (results return within 24h). Recommended for 500+ post jobs. Pick it in Step 4 → Processing mode.

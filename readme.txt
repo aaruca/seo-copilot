@@ -4,7 +4,7 @@ Tags: seo, ai, openai, content, woocommerce, bricks
 Requires at least: 6.2
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.1.0
+Stable tag: 1.1.1
 License: GPLv2 or later
 
 AI-powered SEO content for any post type. Per-field, per-template control. Fluent 2 UI.
@@ -19,6 +19,12 @@ SEO Copilot generates SEO titles, meta descriptions, focus keywords, image alt t
 * OpenAI (gpt-4.1 / gpt-4o family) via JSON mode.
 
 == Changelog ==
+
+= 1.1.1 =
+* Fixed: "Missing focus keyword" / "Missing meta description" presets returned the entire catalog on single-plugin sites — they now filter against only the active SEO plugin's keys (AND across them, with empty checks). Re-runs no longer burn tokens on already-optimized products.
+* Fixed: OpenAI Batch mode failed most chunks on large catalogs because every chunk was submitted at once and exceeded the per-model enqueued-token limit. Submissions are now serialized behind a concurrency gate, with automatic retry of transient batch failures.
+* Fixed: "Apply entire batch" in Pending Review now drains the whole batch instead of stopping at ~500 segments per click. Shows live progress.
+* Fixed: Partially-completed batches now ingest OpenAI's error file and resolve missing items so progress can reach 100%.
 
 = 1.1.0 =
 * Added OpenAI Batch API dispatch in the Bulk Wizard — 50% cheaper, no rate-limit ceiling, async results within 24h. Recommended for 500+ post jobs.
