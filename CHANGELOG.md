@@ -5,6 +5,14 @@ All notable changes to **SEO Copilot** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.4] — 2026-06-04
+
+### Fixed
+- **Applied changes now flush the SEO plugin's own cache so they show up immediately.** After writing, `apply()` calls `rank_math_clear_cache()` (and fires a new `seocp_after_apply` action). On object-cache hosts like Kinsta (Redis), Rank Math serves derived/rendered meta from cache, so a raw postmeta write could stay hidden in the editor and front-end until the cache expired — the exact "the data is generated but the product shows nothing" symptom. This matches the cache-clear step a known-working reference plugin performs.
+
+### Added
+- `seocp_after_apply` action (`$post_id`, `$written_field_ids`) for flushing page caches / CDNs after a write.
+
 ## [1.1.3] — 2026-06-04
 
 ### Fixed

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: SEO Copilot
  * Description: AI-powered SEO content for any post type. Granular per-field, per-template control. Fluent 2 UI.
- * Version: 1.1.3
+ * Version: 1.1.4
  * Author: Ale Aruca
  * License: GPL-2.0-or-later
  * Text Domain: seo-copilot
@@ -12,7 +12,7 @@
 
 defined('ABSPATH') || exit;
 
-define('SEOCP_VERSION', '1.1.3');
+define('SEOCP_VERSION', '1.1.4');
 define('SEOCP_FILE', __FILE__);
 define('SEOCP_DIR', plugin_dir_path(__FILE__));
 define('SEOCP_URL', plugin_dir_url(__FILE__));

@@ -167,6 +167,22 @@ class Runner
             } else {
                 $written = array_keys($attempted);
             }
+
+            // Flush the active SEO plugin's own caches so the new values show
+            // immediately in its metabox and on the front-end. Rank Math, Yoast
+            // and SEOPress cache rendered/derived meta in the object cache
+            // (Redis on Kinsta), so a raw postmeta write alone can stay hidden
+            // until the cache expires. This is the step the working reference
+            // plugin performs and ours was missing.
+            if ($written) {
+                if (function_exists('rank_math_clear_cache')) {
+                    rank_math_clear_cache();
+                }
+                // Generic hook so the active SEO plugin / a page cache / a CDN
+                // can be flushed for this post. Site owners and other providers
+                // can attach their own cache busting here.
+                do_action('seocp_after_apply', $post_id, $written);
+            }
         }
 
         $run = new Run();

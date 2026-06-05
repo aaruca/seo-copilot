@@ -4,7 +4,7 @@ Tags: seo, ai, openai, content, woocommerce, bricks
 Requires at least: 6.2
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.1.3
+Stable tag: 1.1.4
 License: GPLv2 or later
 
 AI-powered SEO content for any post type. Per-field, per-template control. Fluent 2 UI.
@@ -19,6 +19,9 @@ SEO Copilot generates SEO titles, meta descriptions, focus keywords, image alt t
 * OpenAI (gpt-4.1 / gpt-4o family) via JSON mode.
 
 == Changelog ==
+
+= 1.1.4 =
+* Fixed: applied changes now clear Rank Math's cache after writing so they appear immediately in the metabox and front-end on object-cache hosts (Kinsta/Redis). Adds the seocp_after_apply action.
 
 = 1.1.3 =
 * Fixed: bulk writes were silently dropped under WP-Cron because there was no logged-in user, so Rank Math / Yoast's postmeta auth_callback rejected the write. Bulk runner now restores the originating user before each apply.
